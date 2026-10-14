@@ -19,6 +19,19 @@ CREATE TABLE IF NOT EXISTS seen (
     first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     posted     INTEGER NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS seen_met (
+    object_id INTEGER PRIMARY KEY,
+    title     TEXT,
+    seen_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS drafts (
+    issue_id     INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    status       TEXT NOT NULL DEFAULT 'pending',
+    payload_json TEXT NOT NULL
+);
 """
 
 
@@ -43,7 +56,8 @@ class Database:
         if path != ":memory:":
             Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(path)
-        self.conn.execute(SCHEMA)
+        self.conn.row_factory = sqlite3.Row
+        self.conn.executescript(SCHEMA)
         self.conn.commit()
 
     def is_seen(self, eid: str) -> bool:
@@ -56,6 +70,66 @@ class Database:
             (eid, feed_url, title, link, int(posted)),
         )
         self.conn.commit()
+
+    def is_met_seen(self, oid: int) -> bool:
+        row = self.conn.execute("SELECT 1 FROM seen_met WHERE object_id = ?", (oid,)).fetchone()
+        return row is not None
+
+    def mark_met_seen(self, oid: int, title: str) -> None:
+        self.conn.execute(
+            "INSERT OR IGNORE INTO seen_met (object_id, title) VALUES (?,?)",
+            (oid, title),
+        )
+        self.conn.commit()
+
+    def save_draft(self, payload: dict) -> int:
+        import json
+        cur = self.conn.execute(
+            "INSERT INTO drafts (payload_json) VALUES (?)",
+            (json.dumps(payload),),
+        )
+        self.conn.commit()
+        return cur.lastrowid
+
+    def get_draft(self, issue_id: Optional[int] = None) -> Optional[dict]:
+        import json
+        if issue_id is not None:
+            row = self.conn.execute(
+                "SELECT issue_id, created_at, status, payload_json FROM drafts WHERE issue_id = ?",
+                (issue_id,),
+            ).fetchone()
+        else:
+            row = self.conn.execute(
+                "SELECT issue_id, created_at, status, payload_json FROM drafts WHERE status = 'pending' ORDER BY issue_id DESC LIMIT 1"
+            ).fetchone()
+
+        if not row:
+            return None
+        payload = json.loads(row["payload_json"])
+        payload["issue_id"] = row["issue_id"]
+        payload["created_at"] = row["created_at"]
+        payload["status"] = row["status"]
+        return payload
+
+    def approve_draft(self, issue_id: int) -> Optional[dict]:
+        draft = self.get_draft(issue_id)
+        if not draft:
+            return None
+        self.conn.execute(
+            "UPDATE drafts SET status = 'approved' WHERE issue_id = ?",
+            (issue_id,),
+        )
+        self.conn.commit()
+        draft["status"] = "approved"
+        return draft
+
+    def reject_draft(self, issue_id: int) -> bool:
+        cur = self.conn.execute(
+            "UPDATE drafts SET status = 'rejected' WHERE issue_id = ?",
+            (issue_id,),
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
 
     def prune(self, days: int = 180) -> int:
         cur = self.conn.execute(

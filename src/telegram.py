@@ -15,20 +15,20 @@ class TelegramError(Exception):
 
 class TelegramClient:
     def __init__(self, token: str, chat_id: str, min_interval: float = 1.0, max_attempts: int = 3):
-        self._url = f"https://api.telegram.org/bot{token}/sendMessage"
+        self._base_url = f"https://api.telegram.org/bot{token}"
         self.chat_id = chat_id
         self.min_interval = min_interval
         self.max_attempts = max_attempts
         self._last_sent = 0.0
 
-    def send(self, text: str) -> None:
+    def _post(self, endpoint: str, payload: dict) -> None:
         wait = self.min_interval - (time.monotonic() - self._last_sent)
         if wait > 0:
             time.sleep(wait)
-        payload = {"chat_id": self.chat_id, "text": text, "parse_mode": "HTML"}
+        url = f"{self._base_url}/{endpoint}"
         for attempt in range(1, self.max_attempts + 1):
             try:
-                resp = requests.post(self._url, json=payload, timeout=15)
+                resp = requests.post(url, json=payload, timeout=15)
             except requests.RequestException as exc:
                 err = f"network error: {type(exc).__name__}"
                 if attempt == self.max_attempts:
@@ -52,3 +52,20 @@ class TelegramClient:
             # 4xx or exhausted 5xx. Never include the URL (it contains the token).
             raise TelegramError(f"HTTP {resp.status_code}: {resp.text[:200]}")
         raise TelegramError("exhausted retries")
+
+    def send(self, text: str, chat_id: Optional[str] = None) -> None:
+        from .formatter import clean_telegram_html
+        target_chat = chat_id or self.chat_id
+        payload = {"chat_id": target_chat, "text": clean_telegram_html(text), "parse_mode": "HTML"}
+        self._post("sendMessage", payload)
+
+    def send_photo(self, photo_url: str, caption: str = "", chat_id: Optional[str] = None) -> None:
+        from .formatter import clean_telegram_html
+        target_chat = chat_id or self.chat_id
+        payload = {
+            "chat_id": target_chat,
+            "photo": photo_url,
+            "caption": clean_telegram_html(caption)[:1024],
+            "parse_mode": "HTML",
+        }
+        self._post("sendPhoto", payload)

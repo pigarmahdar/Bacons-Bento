@@ -46,6 +46,9 @@ class Feed:
     name: str
     url: str
     tag: str
+    course: str = "anchor"
+    source_id: str = ""
+    curatorial_sensibility: str = ""
     enabled: bool = True
 
 
@@ -53,6 +56,10 @@ class Feed:
 class Settings:
     bot_token: str
     chat_id: str
+    admin_chat_id: str
+    openrouter_api_key: str
+    openrouter_decision_model: str
+    openrouter_drafting_model: str
     db_path: str
     max_posts_per_run: int
 
@@ -66,6 +73,10 @@ def load_settings(require_telegram: bool = True) -> Settings:
     return Settings(
         bot_token=token,
         chat_id=chat_id,
+        admin_chat_id=os.getenv("TELEGRAM_ADMIN_CHAT_ID", ""),
+        openrouter_api_key=os.getenv("OPENROUTER_API_KEY", ""),
+        openrouter_decision_model=os.getenv("OPENROUTER_DECISION_MODEL", "xiaomi/mimo-v2.6-flash"),
+        openrouter_drafting_model=os.getenv("OPENROUTER_DRAFTING_MODEL", "xiaomi/mimo-v2.6-flash"),
         db_path=os.getenv("DB_PATH", str(ROOT / "data" / "bento_history.db")),
         max_posts_per_run=int(os.getenv("MAX_POSTS_PER_RUN", "5")),
     )
@@ -118,6 +129,9 @@ def load_feeds(path: Path | None = None) -> List[Feed]:
             name=s.name,
             url=s.feed_url or s.url,
             tag=s.tag or s.id,
+            course=s.course,
+            source_id=s.id,
+            curatorial_sensibility=s.curatorial_sensibility,
             enabled=s.enabled,
         )
         for s in sources

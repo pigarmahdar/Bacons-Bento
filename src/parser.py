@@ -29,6 +29,8 @@ class Entry:
     link: str
     summary: str
     published: float  # unix timestamp, 0 if unknown
+    source_name: str = ""
+    course: str = "anchor"
 
 
 def clean_text(html: str, limit: int = SUMMARY_MAX) -> str:
@@ -66,6 +68,8 @@ def parse_feed_bytes(content: bytes, feed: Feed) -> List[Entry]:
                 link=link,
                 summary=_summary(e),
                 published=float(calendar.timegm(ts)) if ts else 0.0,
+                source_name=feed.name,
+                course=feed.course,
             )
         )
     return entries
