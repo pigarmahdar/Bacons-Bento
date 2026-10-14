@@ -6,9 +6,23 @@ Read the [Bento Manifesto](MANIFESTO.md) for our core editorial principles, the 
 
 ---
 
+## 🌿 Origins & Product Philosophy
+
+Bacon's Bento began as a quiet personal sanctuary: a dedicated way for Pigar to document, digest, and honor an enduring fascination with longform writing, interdisciplinary collisions, and patient craftsmanship. In an internet culture optimized for speed, fragmented takes, and ephemeral feeds, Bento was created to slow down—to build a lasting, curated record of essays and archival discoveries that linger long after reading.
+
+Throughout its creation, every product management and design decision was guided by an insistence on **calmness, minimalism, and contemplative restraint**:
+
+* **Personal Garden Over Content Engine:** Bento is an open studio rather than an audience-growth project. There are no engagement loops, vanity metrics, or tracking tags. It is designed first and foremost to satisfy personal curiosity and editorial integrity.
+* **Intentional Pull Over Automated Push:** While automated cron pipelines are the standard for web products, we deliberately retired scheduled cron runs. Curation is a mindful human ritual—initiated through the CLI (`bento new`) only when the curator sits down with the headspace to read, reflect, and assemble a plate.
+* **Quiet, Contemplative Expression:** The language, summaries, and framing avoid hyperactive marketing cadence or breathless commentary. Dispatches speak in spare, grounded prose that invites reflection rather than urgency.
+* **The Bento Plate Metaphor (Balance & Satiety):** Just as a traditional bento balances distinct textures and flavors into a finite, artful meal, each issue caps itself at five balanced courses. It respects the reader's cognitive attention, offering a moment of quiet focus rather than an infinite scroll.
+
+---
+
 ## 🍱 The Bento Plate
 
 Bacon's Bento sources from a curated editorial registry (`config/registry.yaml`) spanning five balanced courses:
+
 
 1. **The Anchor (Philosophy & Meaning):** *Aeon, Psyche, Noema*
 2. **The Lens (Narrative Investigation):** *Coda Story, r/longform*
