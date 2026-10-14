@@ -157,6 +157,23 @@ sources:
     tag: "PublicDomain"
     enabled: true
 
+  - id: them-culture
+    name: "Them (Culture)"
+    type: "rss"
+    url: "https://www.them.us/culture"
+    feed_url: "https://www.them.us/feeds/culture.rss"
+    course: "garnish"
+    curatorial_sensibility: "Queer culture, community, and subculture; the lived texture of identity beyond the headlines."
+    pillars:
+      - "foreign-and-strange"
+      - "optimism"
+    taste_profile:
+      cognitive_load: "snack"
+      cadence: "weekly"
+      tone: "playful-intellectual"
+    tag: "Them"
+    enabled: true
+
   # ============================================================================
   # COURSE 5: THE VISUAL AMBIENT GARNISH (The Met Open Access API)
   # ============================================================================
