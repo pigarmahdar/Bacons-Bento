@@ -40,3 +40,49 @@ def format_entry(entry: Entry) -> str:
     parts.append(f'<i>{html.escape(_hashtag(entry.source_tag))}</i> · <a href="{link}">Read</a>')
     msg = "\n\n".join(parts)
     return msg[:TG_LIMIT]
+
+
+def html_to_terminal(text: str) -> str:
+    """Render Telegram HTML as readable ANSI-styled terminal text."""
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(text, "html.parser")
+
+    # Format blockquotes
+    for bq in soup.find_all("blockquote"):
+        content = bq.get_text().strip()
+        lines = [f"  │ \033[3m{line}\033[0m" for line in content.splitlines()]
+        bq.replace_with("\n" + "\n".join(lines) + "\n")
+
+    # Format links
+    for a in soup.find_all("a"):
+        href = a.get("href", "")
+        label = a.get_text().strip()
+        if href and label and href != label:
+            a.replace_with(f"\033[4;36m{label}\033[0m (\033[2m{href}\033[0m)")
+        elif href:
+            a.replace_with(f"\033[4;36m{href}\033[0m")
+        else:
+            a.replace_with(label)
+
+    # Format bold
+    for b in soup.find_all(["b", "strong"]):
+        b.replace_with(f"\033[1m{b.get_text()}\033[0m")
+
+    # Format italics
+    for i in soup.find_all(["i", "em"]):
+        i.replace_with(f"\033[3m{i.get_text()}\033[0m")
+
+    # Format inline code
+    for c in soup.find_all(["code", "pre"]):
+        c.replace_with(f"\033[7m {c.get_text()} \033[0m")
+
+    return html.unescape(soup.get_text())
+
+
+def format_terminal_box(title: str, content: str, width: int = 76) -> str:
+    """Wrap content in a clean unicode box."""
+    top = f"┌─ \033[1m{title}\033[0m " + "─" * max(0, width - len(title) - 5) + "┐"
+    bottom = "└" + "─" * (width - 1) + "┘"
+    return f"{top}\n{content}\n{bottom}"
+

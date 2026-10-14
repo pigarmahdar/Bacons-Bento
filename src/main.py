@@ -213,6 +213,12 @@ def run_approve(issue_id: Optional[int] = None) -> int:
 
 
 def main() -> None:
+    # If a CLI subcommand is passed, route directly to cli.main
+    subcommands = {"new", "draft", "preview", "show", "publish", "approve", "status", "bootstrap"}
+    if len(sys.argv) > 1 and sys.argv[1] in subcommands:
+        from . import cli
+        sys.exit(cli.main(sys.argv[1:]))
+
     ap = argparse.ArgumentParser(description="Bacon's Bento Orchestration Pipeline")
     ap.add_argument("--draft", action="store_true", help="run Curation & Drafter models, generate weekly draft, send to admin chat")
     ap.add_argument("--approve", nargs="?", const=-1, type=int, help="approve and publish pending draft (optionally specify issue ID)")
@@ -237,3 +243,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

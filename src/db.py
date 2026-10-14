@@ -138,5 +138,35 @@ class Database:
         self.conn.commit()
         return cur.rowcount
 
+    def get_hopper_stats(self) -> dict:
+        import json
+        seen_total = self.conn.execute("SELECT COUNT(*) FROM seen").fetchone()[0]
+        posted_total = self.conn.execute("SELECT COUNT(*) FROM seen WHERE posted = 1").fetchone()[0]
+        met_seen_total = self.conn.execute("SELECT COUNT(*) FROM seen_met").fetchone()[0]
+        published_count = self.conn.execute("SELECT COUNT(*) FROM drafts WHERE status = 'approved'").fetchone()[0]
+        
+        pending_draft = self.get_draft()
+
+        last_published = None
+        last_pub_row = self.conn.execute(
+            "SELECT issue_id, created_at, status, payload_json FROM drafts WHERE status = 'approved' ORDER BY issue_id DESC LIMIT 1"
+        ).fetchone()
+        if last_pub_row:
+            last_published = json.loads(last_pub_row["payload_json"])
+            last_published["issue_id"] = last_pub_row["issue_id"]
+            last_published["created_at"] = last_pub_row["created_at"]
+            last_published["status"] = last_pub_row["status"]
+
+        return {
+            "seen_total": seen_total,
+            "posted_total": posted_total,
+            "met_seen_total": met_seen_total,
+            "published_count": published_count,
+            "pending_draft": pending_draft,
+            "last_published": last_published,
+        }
+
     def close(self) -> None:
         self.conn.close()
+
+

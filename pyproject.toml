@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bacons-bento"
+version = "0.2.0"
+description = "Intentional digital garden and personal editorial taste engine."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "feedparser>=6.0.11",
+    "beautifulsoup4>=4.12",
+    "requests>=2.31",
+    "python-dotenv>=1.0",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+bento = "src.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]

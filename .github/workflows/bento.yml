@@ -1,14 +1,17 @@
 name: Bento
 
+# Scheduled cron retired in favor of intentional on-demand curation (via CLI: `bento new`)
+# on:
+#   schedule:
+#     - cron: "0 0 * * *"
 on:
-  schedule:
-    - cron: "0 0 * * *"   # daily, 00:00 UTC (08:00 SGT/HKT)
   workflow_dispatch:
     inputs:
       bootstrap:
         description: "Record current entries without posting (first run)"
         type: boolean
         default: false
+
 
 concurrency: bento
 

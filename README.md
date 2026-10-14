@@ -18,16 +18,29 @@ Bacon's Bento sources from a curated editorial registry (`config/registry.yaml`)
 
 ---
 
-## Local Setup
+## 🍱 Editorial CLI
+
+Bacon's Bento operates on an intentional, on-demand curation workflow. Rather than relying on an unprompted automated cron job, dispatches are initiated and curated directly through the terminal:
 
 ```bash
+# Setup
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # fill in token + chat id
-python -m pytest
-python -m src.main --dry-run      # preview posts without sending
-python -m src.main --bootstrap    # record current entries, post nothing
-python -m src.main                # live run (max 5 posts)
+python setup.py develop   # or pip install -e .
+cp .env.example .env      # fill in tokens & chat IDs
+```
+
+### Curatorial Commands
+
+You can run `bento` (if inside `.venv`) or `./bento` directly from the repository root:
+
+```bash
+./bento new              # Ingest feeds, draft issue, preview in terminal & Telegram
+./bento new --dry-run    # Preview candidate issue in terminal without saving or notifying
+./bento preview          # Inspect current pending draft in terminal
+./bento publish          # Confirm and broadcast approved issue to @baconbento
+./bento status           # Inspect hopper metrics, unseen candidate count, and draft status
+./bento bootstrap        # Record current feed entries as seen without drafting
 ```
 
 Edit [`config/registry.yaml`](config/registry.yaml) to inspect or modify source metadata, editorial rationales, and department filters. It is the single source of truth for sources.
@@ -44,6 +57,7 @@ python -m scripts.check_feeds
 
 ## GitHub Actions
 
-1. Add repository secrets `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` (`@baconbento`).
-2. Run the **Bento** workflow manually with `bootstrap = true` once.
-3. The workflow runs daily; deduplication state persists on the `state` branch.
+1. Repository secrets `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (`@baconbento`), and `OPENROUTER_API_KEY`.
+2. Automatic cron schedules are retired in favor of intentional on-demand curation (`./bento new`).
+3. Manual `workflow_dispatch` remains available in GitHub Actions as a cloud runner fallback. Deduplication state persists on the `state` branch.
+
