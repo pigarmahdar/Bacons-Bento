@@ -7,6 +7,10 @@ name = "bacons-bento"
 version = "0.2.0"
 description = "Intentional digital garden and personal editorial taste engine."
 readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "Pigar Mahdar" }
+]
 requires-python = ">=3.9"
 dependencies = [
     "feedparser>=6.0.11",
@@ -16,9 +20,18 @@ dependencies = [
     "pyyaml>=6.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
 [project.scripts]
 bento = "src.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["src*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
