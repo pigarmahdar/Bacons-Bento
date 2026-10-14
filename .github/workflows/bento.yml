@@ -1,0 +1,62 @@
+name: Bento
+
+on:
+  schedule:
+    - cron: "0 0 * * *"   # daily, 00:00 UTC (08:00 SGT/HKT)
+  workflow_dispatch:
+    inputs:
+      bootstrap:
+        description: "Record current entries without posting (first run)"
+        type: boolean
+        default: false
+
+concurrency: bento
+
+permissions:
+  contents: write
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore state (if the branch exists)
+        run: |
+          mkdir -p data
+          if git ls-remote --exit-code --heads origin state >/dev/null 2>&1; then
+            git fetch origin state
+            git show origin/state:bento_history.db > data/bento_history.db
+          fi
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Run Bento
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          MAX_POSTS_PER_RUN: "5"
+        run: |
+          if [ "${{ inputs.bootstrap }}" = "true" ]; then
+            python -m src.main --bootstrap
+          else
+            python -m src.main
+          fi
+
+      - name: Save state
+        run: |
+          git config user.name "bento-bot"
+          git config user.email "bento-bot@users.noreply.github.com"
+          git checkout --orphan state-new
+          git rm -rf --cached . >/dev/null 2>&1 || true
+          cp data/bento_history.db /tmp/bento_history.db
+          git clean -fdxq
+          cp /tmp/bento_history.db bento_history.db
+          git add -f bento_history.db
+          git commit -qm "state: $(date -u +%FT%TZ)"
+          git push -f origin state-new:state

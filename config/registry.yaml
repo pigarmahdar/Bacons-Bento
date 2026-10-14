@@ -1,0 +1,250 @@
+version: 1
+
+# Bacon's Bento Editorial Registry 🍱
+# A curated registry of sources reflecting personal taste, intellectual curiosity, and aesthetic resonance.
+
+sources:
+  # ============================================================================
+  # COURSE 1: THE ANCHOR (Philosophy, Metaphysics & Human Interiority)
+  # ============================================================================
+
+  - id: aeon
+    name: "Aeon"
+    type: "rss"
+    url: "https://aeon.co/"
+    feed_url: "https://aeon.co/feed.rss"
+    course: "anchor"
+    curatorial_sensibility: "A world of ideas; philosophy, deep time, essays on meaning and metaphysics."
+    pillars:
+      - "interdisciplinary"
+      - "slow-craft"
+    taste_profile:
+      cognitive_load: "deep_dive"
+      cadence: "daily"
+      tone: "contemplative"
+    tag: "Aeon"
+    enabled: true
+
+  - id: psyche
+    name: "Psyche"
+    type: "rss"
+    url: "https://psyche.co/"
+    feed_url: "https://psyche.co/feed.rss"
+    course: "anchor"
+    curatorial_sensibility: "On the human condition; psychology, ethics, selfhood, and lived interiority."
+    pillars:
+      - "optimism"
+      - "slow-craft"
+    taste_profile:
+      cognitive_load: "engaged"
+      cadence: "daily"
+      tone: "introspective"
+    tag: "Psyche"
+    enabled: true
+
+  - id: noema
+    name: "Noema Magazine"
+    type: "rss"
+    url: "https://www.noemamag.com/"
+    feed_url: "https://www.noemamag.com/feed/"
+    course: "anchor"
+    curatorial_sensibility: "Planetary philosophy, deep technosocial critique, high-modernist essays."
+    pillars:
+      - "interdisciplinary"
+      - "optimism"
+      - "slow-craft"
+    taste_profile:
+      cognitive_load: "deep_dive"
+      cadence: "weekly"
+      tone: "rigorous"
+    tag: "Noema"
+    enabled: true
+
+  - id: daedalus
+    name: "Dædalus"
+    type: "rss"
+    url: "https://www.amacad.org/daedalus"
+    feed_url: "https://www.amacad.org/rss/daedalus.xml"
+    course: "anchor"
+    curatorial_sensibility: "American Academy of Arts & Sciences; peer-reviewed monographs and enduring civic thought."
+    pillars:
+      - "slow-craft"
+      - "interdisciplinary"
+    taste_profile:
+      cognitive_load: "deep_dive"
+      cadence: "sporadic"
+      tone: "scholarly"
+    tag: "Daedalus"
+    # Audit 2026-10-14: amacad.org returns 403 for all feed paths tried; needs a different route.
+    enabled: false
+
+  # ============================================================================
+  # COURSE 2: THE LENS (Thematic & Narrative Investigation)
+  # ============================================================================
+
+  - id: coda-story
+    name: "Coda Story"
+    type: "rss"
+    url: "https://www.codastory.com/"
+    feed_url: "https://www.codastory.com/feed/"
+    course: "lens"
+    curatorial_sensibility: "Thematic investigative journalism; authoritarianism, tracking, and disinformation."
+    pillars:
+      - "foreign-and-strange"
+      - "slow-craft"
+    taste_profile:
+      cognitive_load: "engaged"
+      cadence: "weekly"
+      tone: "lucid"
+    tag: "CodaStory"
+    enabled: true
+
+  - id: r-longform
+    name: "r/longform"
+    type: "rss"
+    url: "https://www.reddit.com/r/longform/"
+    feed_url: "https://www.reddit.com/r/longform/top/.rss?t=week"
+    course: "lens"
+    curatorial_sensibility: "Curated crowd consciousness; crowd-vetted narrative non-fiction and deep reporting."
+    pillars:
+      - "slow-craft"
+      - "interdisciplinary"
+    taste_profile:
+      cognitive_load: "deep_dive"
+      cadence: "weekly"
+      tone: "narrative"
+    tag: "Longform"
+    enabled: true
+
+  # ============================================================================
+  # COURSE 3: THE CRAFT & TRANSLATION (Empirical Synthesis & Mental Models)
+  # ============================================================================
+
+  - id: knowable-mind
+    name: "Knowable Magazine"
+    type: "rss"
+    url: "https://knowablemagazine.org/content/mind"
+    feed_url: "https://knowablemagazine.org/rss"
+    course: "craft"
+    curatorial_sensibility: "Rigorous empirical translation; mind, cognition, and society from peer review."
+    pillars:
+      - "optimism"
+      - "slow-craft"
+    taste_profile:
+      cognitive_load: "engaged"
+      cadence: "weekly"
+      tone: "empirical"
+    tag: "Knowable"
+    enabled: true
+
+  - id: big-think
+    name: "Big Think"
+    type: "rss"
+    url: "https://bigthink.com/"
+    feed_url: "https://bigthink.com/feed/"
+    course: "craft"
+    curatorial_sensibility: "Ideas and cross-disciplinary concepts rendered punchy and accessible."
+    pillars:
+      - "interdisciplinary"
+      - "optimism"
+    taste_profile:
+      cognitive_load: "snack"
+      cadence: "daily"
+      tone: "expansive"
+    tag: "BigThink"
+    enabled: true
+
+  # ============================================================================
+  # COURSE 4: THE CULTURAL GARNISH (Oddities, Curiosities & Visual Critique)
+  # ============================================================================
+
+  - id: public-domain-review
+    name: "The Public Domain Review"
+    type: "rss"
+    url: "https://publicdomainreview.org/"
+    feed_url: "https://publicdomainreview.org/rss.xml"
+    course: "garnish"
+    curatorial_sensibility: "Curated historical oddities, archival artifacts, and fringe histories."
+    pillars:
+      - "foreign-and-strange"
+      - "slow-craft"
+    taste_profile:
+      cognitive_load: "engaged"
+      cadence: "weekly"
+      tone: "curious"
+    tag: "PublicDomain"
+    enabled: true
+
+  - id: cabinet-magazine
+    name: "Cabinet Magazine"
+    type: "rss"
+    url: "https://www.cabinetmagazine.org/"
+    feed_url: "https://www.cabinetmagazine.org/rss/rss.xml"
+    course: "garnish"
+    curatorial_sensibility: "Art, culture, and curiosities; playful, obsessive, and idiosyncratic essays."
+    pillars:
+      - "foreign-and-strange"
+      - "interdisciplinary"
+    taste_profile:
+      cognitive_load: "engaged"
+      cadence: "sporadic"
+      tone: "playful-intellectual"
+    tag: "Cabinet"
+    enabled: true
+
+  - id: ocula
+    name: "Ocula"
+    type: "rss"
+    url: "https://ocula.com/magazine/"
+    feed_url: "https://ocula.com/magazine/rss/"
+    course: "garnish"
+    curatorial_sensibility: "Contemporary art critique, gallery features, and spatial/visual discourse."
+    pillars:
+      - "foreign-and-strange"
+      - "slow-craft"
+    taste_profile:
+      cognitive_load: "engaged"
+      cadence: "weekly"
+      tone: "critical-aesthetic"
+    tag: "Ocula"
+    # Audit 2026-10-14: 403 behind a Cloudflare bot challenge; cannot be polled headlessly.
+    enabled: false
+
+  # ============================================================================
+  # COURSE 5: THE VISUAL AMBIENT GARNISH (The Met Open Access API)
+  # ============================================================================
+
+  - id: met-collection
+    name: "The Metropolitan Museum of Art"
+    type: "api"
+    url: "https://www.metmuseum.org/"
+    endpoint: "https://collectionapi.metmuseum.org/public/collection/v1"
+    course: "visual_garnish"
+    curatorial_sensibility: "Curated CC0 art across fine art, antiquities, prints, and photography."
+    pillars:
+      - "foreign-and-strange"
+      - "slow-craft"
+      - "optimism"
+    taste_profile:
+      cognitive_load: "snack"
+      cadence: "daily"
+      tone: "aesthetic-serene"
+    tag: "TheMet"
+    config:
+      department_ids:
+        - 3   # Ancient West Asian Art
+        - 5   # Arts of Africa, Oceania, and the Americas
+        - 6   # Asian Art
+        - 9   # Drawings and Prints
+        - 10  # Egyptian Art
+        - 11  # European Paintings
+        - 13  # Greek and Roman Art
+        - 14  # Islamic Art
+        - 15  # The Robert Lehman Collection
+        - 16  # The Libraries
+        - 17  # Medieval Art
+        - 19  # Photographs
+        - 21  # Modern Art
+      require_highlight: true
+      require_image: true
+    enabled: true
