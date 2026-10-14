@@ -60,24 +60,6 @@ sources:
     tag: "Noema"
     enabled: true
 
-  - id: daedalus
-    name: "Dædalus"
-    type: "rss"
-    url: "https://www.amacad.org/daedalus"
-    feed_url: "https://www.amacad.org/rss/daedalus.xml"
-    course: "anchor"
-    curatorial_sensibility: "American Academy of Arts & Sciences; peer-reviewed monographs and enduring civic thought."
-    pillars:
-      - "slow-craft"
-      - "interdisciplinary"
-    taste_profile:
-      cognitive_load: "deep_dive"
-      cadence: "sporadic"
-      tone: "scholarly"
-    tag: "Daedalus"
-    # Audit 2026-10-14: amacad.org returns 403 for all feed paths tried; needs a different route.
-    enabled: false
-
   # ============================================================================
   # COURSE 2: THE LENS (Thematic & Narrative Investigation)
   # ============================================================================
@@ -174,41 +156,6 @@ sources:
       tone: "curious"
     tag: "PublicDomain"
     enabled: true
-
-  - id: cabinet-magazine
-    name: "Cabinet Magazine"
-    type: "rss"
-    url: "https://www.cabinetmagazine.org/"
-    feed_url: "https://www.cabinetmagazine.org/rss/rss.xml"
-    course: "garnish"
-    curatorial_sensibility: "Art, culture, and curiosities; playful, obsessive, and idiosyncratic essays."
-    pillars:
-      - "foreign-and-strange"
-      - "interdisciplinary"
-    taste_profile:
-      cognitive_load: "engaged"
-      cadence: "sporadic"
-      tone: "playful-intellectual"
-    tag: "Cabinet"
-    enabled: true
-
-  - id: ocula
-    name: "Ocula"
-    type: "rss"
-    url: "https://ocula.com/magazine/"
-    feed_url: "https://ocula.com/magazine/rss/"
-    course: "garnish"
-    curatorial_sensibility: "Contemporary art critique, gallery features, and spatial/visual discourse."
-    pillars:
-      - "foreign-and-strange"
-      - "slow-craft"
-    taste_profile:
-      cognitive_load: "engaged"
-      cadence: "weekly"
-      tone: "critical-aesthetic"
-    tag: "Ocula"
-    # Audit 2026-10-14: 403 behind a Cloudflare bot challenge; cannot be polled headlessly.
-    enabled: false
 
   # ============================================================================
   # COURSE 5: THE VISUAL AMBIENT GARNISH (The Met Open Access API)

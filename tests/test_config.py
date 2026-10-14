@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parent.parent
 def test_load_registry_parses_yaml():
     registry_path = ROOT / "config" / "registry.yaml"
     sources = load_registry(registry_path)
-    assert len(sources) >= 10  # enabled sources only
+    assert len(sources) >= 9  # enabled sources only
 
     # Check for specific courses and source types
     sources_by_id = {s.id: s for s in sources}
@@ -31,8 +31,8 @@ def test_load_registry_parses_yaml():
 def test_load_feeds_defaults_to_registry_rss():
     feeds = load_feeds()
     # Feeds should only include enabled RSS feeds (not API sources)
-    assert len(feeds) >= 9
+    assert len(feeds) >= 8
     names = [f.name for f in feeds]
     assert "Aeon" in names
-    assert "Ocula" not in names  # disabled in registry after feed audit
+    assert "Ocula" not in names  # removed from registry after feed audit
     assert "The Metropolitan Museum of Art" not in names  # API type is excluded from RSS feed list
