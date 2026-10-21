@@ -138,6 +138,16 @@ class Database:
         self.conn.commit()
         return cur.rowcount
 
+    def get_kv(self, key: str, default: Optional[str] = None) -> Optional[str]:
+        self.conn.execute("CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)")
+        row = self.conn.execute("SELECT value FROM kv WHERE key = ?", (key,)).fetchone()
+        return row[0] if row else default
+
+    def set_kv(self, key: str, value: str) -> None:
+        self.conn.execute("CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)")
+        self.conn.execute("INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)", (key, value))
+        self.conn.commit()
+
     def get_hopper_stats(self) -> dict:
         import json
         seen_total = self.conn.execute("SELECT COUNT(*) FROM seen").fetchone()[0]

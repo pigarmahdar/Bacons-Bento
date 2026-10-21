@@ -12,6 +12,7 @@ from .db import Database
 from .drafter import draft_issue_package
 from .llm import OpenRouterClient
 from .met import MetArtwork, fetch_met_artwork
+from .pantry import collect_candidates
 from .parser import Entry, fetch_feed
 from .telegram import TelegramClient, TelegramError
 
@@ -35,17 +36,16 @@ def run_draft(dry_run: bool = False) -> int:
     feeds = load_feeds()
     db = Database(settings.db_path)
 
-    # 1. Collect unseen candidate pool
-    candidates = []
-    seen_in_batch = set()
-    for feed in feeds:
-        for entry in fetch_feed(feed):
-            if entry.id in seen_in_batch or db.is_seen(entry.id):
-                continue
-            seen_in_batch.add(entry.id)
-            candidates.append(entry)
-
-    log.info("Ingested %d unseen candidate articles across %d feeds", len(candidates), len(feeds))
+    # 1. Collect unseen candidate pool (RSS Feeds + Chef's Pantry)
+    candidates, breakdown = collect_candidates(feeds, settings, db, dry_run=dry_run)
+    log.info(
+        "Ingested %d unseen candidate articles across %d feeds (RSS: %d, Obsidian: %d, Telegram: %d)",
+        len(candidates),
+        len(feeds),
+        breakdown["rss"],
+        breakdown["obsidian"],
+        breakdown["telegram"],
+    )
 
     # 2. Fetch Course 5: The Met Open Access Artwork
     met_source = next((s for s in load_registry() if s.id == "met-collection"), None)

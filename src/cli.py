@@ -13,6 +13,7 @@ from .drafter import draft_issue_package
 from .formatter import format_terminal_box, html_to_terminal
 from .llm import OpenRouterClient
 from .met import fetch_met_artwork
+from .pantry import collect_candidates
 from .parser import fetch_feed
 from .telegram import TelegramClient, TelegramError
 
@@ -44,17 +45,18 @@ def cmd_new(args: argparse.Namespace) -> int:
     db = Database(settings.db_path)
 
     print("\033[1m🍱 Bento: Ingesting feeds & assembling candidates...\033[0m")
-    candidates = []
-    seen_in_batch = set()
-    for feed in feeds:
-        for entry in fetch_feed(feed):
-            if entry.id in seen_in_batch or db.is_seen(entry.id):
-                continue
-            seen_in_batch.add(entry.id)
-            candidates.append(entry)
-
-    log.info("Ingested %d unseen candidate articles across %d feeds", len(candidates), len(feeds))
-    print(f"  → Found {len(candidates)} unseen candidate articles across {len(feeds)} sources.")
+    candidates, breakdown = collect_candidates(feeds, settings, db, dry_run=dry_run)
+    log.info(
+        "Ingested %d unseen candidates (RSS: %d, Obsidian: %d, Telegram: %d)",
+        breakdown["total"],
+        breakdown["rss"],
+        breakdown["obsidian"],
+        breakdown["telegram"],
+    )
+    print(
+        f"  → Found {breakdown['total']} unseen candidate articles: "
+        f"{breakdown['rss']} RSS, {breakdown['obsidian']} Obsidian clippings, {breakdown['telegram']} Telegram drops."
+    )
 
     # 2. Fetch Course 5: The Met Open Access Artwork
     met_source = next((s for s in load_registry() if s.id == "met-collection"), None)
@@ -273,6 +275,12 @@ def cmd_status(args: argparse.Namespace) -> int:
 
     content = []
     content.append(f"• Active Feeds in Registry : \033[1m{len(feeds)}\033[0m")
+
+    # Chef's Pantry status
+    from pathlib import Path
+    obs_path = Path(settings.obsidian_clippings_path).expanduser() if settings.obsidian_clippings_path else None
+    obs_count = len([f for f in obs_path.glob("*.md") if not f.name.startswith(("_", "."))]) if (obs_path and obs_path.is_dir()) else 0
+    content.append(f"• Chef's Pantry (Obsidian) : \033[1m{obs_count}\033[0m articles in vault")
     content.append(f"• Total Articles Ingested  : {stats['seen_total']}")
     content.append(f"• Articles Published       : {stats['posted_total']}")
     content.append(f"• Met Artworks Displayed   : {stats['met_seen_total']}")

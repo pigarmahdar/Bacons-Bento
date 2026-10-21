@@ -65,13 +65,15 @@ A real bento is never a homogenous pile; it is an artful arrangement of distinct
 flowchart TD
     subgraph Candidate Ingestion
         RSS[Curated Sources: Aeon, Psyche, Noema, Coda, Knowable, PDR, Them] -->|Fetch Unseen| Pool[(Candidate Pool: ~250 items)]
+        Obsidian["Chef's Pantry: Obsidian Clippings Vault"] -->|Parse Frontmatter & Topics| Pool
+        TelegramDM["Chef's Pantry: @MellowBreak_bot Private DM"] -->|Poll Admin Submissions| Pool
         MetAPI[The Met Open Access API] -->|Query CC0 Highlights| MetArt[Curated Artwork]
     end
 
     subgraph Two-Stage AI Engine
         Pool --> Jev[Stage 1: TypeSafe Jev 1.13<br/>OpenRouter Decisions API]
         Manifesto[Manifesto Litmus Tests] -.-> Jev
-        Jev -->|Selects 1 per course or 'none_worthy'| Selections[Curated Selections]
+        Jev -->|Enforce Max 1 Pantry Item Collision Guardrail| Selections[Curated Selections]
         Selections --> Mimo[Stage 2: Xiaomi Mimo v2.6 Flash<br/>Drafter Model]
         MetArt --> Mimo
         Mimo -->|Drafts Thematic Synthesis + Courses| DraftPkg[Formatted Telegram Issue]

@@ -98,6 +98,24 @@ sources:
     tag: "Longform"
     enabled: true
 
+  - id: 404-media
+    name: "404 Media"
+    type: "rss"
+    url: "https://www.404media.co/"
+    feed_url: "https://www.404media.co/rss/"
+    course: "lens"
+    curatorial_sensibility: "Independent investigative journalism; hacking, surveillance capitalism, right-to-repair, and digital fringe subcultures."
+    pillars:
+      - "slow-craft"
+      - "foreign-and-strange"
+    taste_profile:
+      cognitive_load: "engaged"
+      cadence: "daily"
+      tone: "investigative"
+    tag: "404Media"
+    enabled: true
+
+
   # ============================================================================
   # COURSE 3: THE CRAFT & TRANSLATION (Empirical Synthesis & Mental Models)
   # ============================================================================

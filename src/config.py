@@ -62,6 +62,8 @@ class Settings:
     openrouter_drafting_model: str
     db_path: str
     max_posts_per_run: int
+    obsidian_clippings_path: str = ""
+    pantry_max_age_days: int = 30
 
 
 def load_settings(require_telegram: bool = True) -> Settings:
@@ -79,6 +81,11 @@ def load_settings(require_telegram: bool = True) -> Settings:
         openrouter_drafting_model=os.getenv("OPENROUTER_DRAFTING_MODEL", "xiaomi/mimo-v2.6-flash"),
         db_path=os.getenv("DB_PATH", str(ROOT / "data" / "bento_history.db")),
         max_posts_per_run=int(os.getenv("MAX_POSTS_PER_RUN", "5")),
+        obsidian_clippings_path=os.getenv(
+            "OBSIDIAN_CLIPPINGS_PATH",
+            os.path.expanduser("~/Documents/Bacon Notes/Clippings"),
+        ),
+        pantry_max_age_days=int(os.getenv("PANTRY_MAX_AGE_DAYS", "30")),
     )
 
 

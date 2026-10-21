@@ -16,19 +16,29 @@ Throughout its creation, every product management and design decision was guided
 * **Intentional Pull Over Automated Push:** While automated cron pipelines are the standard for web products, we deliberately retired scheduled cron runs. Curation is a mindful human ritual—initiated through the CLI (`bento new`) only when the curator sits down with the headspace to read, reflect, and assemble a plate.
 * **Quiet, Contemplative Expression:** The language, summaries, and framing avoid hyperactive marketing cadence or breathless commentary. Dispatches speak in spare, grounded prose that invites reflection rather than urgency.
 * **The Bento Plate Metaphor (Balance & Satiety):** Just as a traditional bento balances distinct textures and flavors into a finite, artful meal, each issue caps itself at five balanced courses. It respects the reader's cognitive attention, offering a moment of quiet focus rather than an infinite scroll.
+* **The Chef's Pantry (Human Signal Over Algorithmic Firehoses):** Automated RSS feeds sweep the perimeter, but the highest-fidelity signal comes from what the curator personally reads and discovers. The Chef's Pantry bridges private research into public curation without polluting the publication stream.
 
 ---
 
-## 🍱 The Bento Plate
+## 🍱 The Ingestion Engines & Sources
 
-Bacon's Bento sources from a curated editorial registry (`config/registry.yaml`) spanning five balanced courses:
+Bacon's Bento combines automated perimeter sweeps with personal human capture:
 
+### 1. The Perimeter Feeds (`config/registry.yaml`)
+Curated RSS feeds spanning the foundational 4 reading courses and The Met API:
+* **The Anchor (Philosophy & Meaning):** *Aeon, Psyche, Noema*
+* **The Lens (Narrative Investigation):** *Coda Story, r/longform*
+* **The Craft & Translation (Empirical & Mind):** *Knowable Magazine, Big Think*
+* **The Cultural Garnish (Oddities & Visuals):** *The Public Domain Review*
+* **The Visual Ambient Garnish:** *The Metropolitan Museum of Art Open Access Collection* (CC0 high-res art & antiquities)
 
-1. **The Anchor (Philosophy & Meaning):** *Aeon, Psyche, Noema*
-2. **The Lens (Narrative Investigation):** *Coda Story, r/longform*
-3. **The Craft & Translation (Empirical & Mind):** *Knowable Magazine, Big Think*
-4. **The Cultural Garnish (Oddities & Visuals):** *The Public Domain Review*
-5. **The Visual Ambient Garnish:** *The Metropolitan Museum of Art Open Access Collection* (CC0 high-res art & antiquities)
+### 2. The Chef's Pantry (Personal Reserve)
+A pre-vetted reservoir of articles discovered during personal browsing, funneled through a zero-friction dual capture loop:
+* **Desktop Research (Obsidian Vault):** Articles saved into `Clippings/*.md` with YAML frontmatter (`source`, `title`, `topic`, `description`) are read directly from local storage.
+* **Mobile On-the-Go (Telegram Bot DM):** Web articles encountered while mobile are forwarded privately to `@MellowBreak_bot`. The bot acts as a private airlock, keeping `@baconbento` free of raw link drops.
+
+> [!important] The 5-Course & Collision Guardrails
+> The Chef's Pantry is a **candidate pool**, not an extra permanent slot. Articles compete for courses (`craft`, `lens`, `anchor`, `garnish`) based on their topic. Bento's **Source Collision Rule** strictly guarantees that at most **one** Chef's Pantry item can appear in any single issue, preventing personal bias from overwhelming the balanced tasting menu.
 
 ---
 
