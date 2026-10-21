@@ -278,9 +278,33 @@ def cmd_status(args: argparse.Namespace) -> int:
 
     # Chef's Pantry status
     from pathlib import Path
-    obs_path = Path(settings.obsidian_clippings_path).expanduser() if settings.obsidian_clippings_path else None
-    obs_count = len([f for f in obs_path.glob("*.md") if not f.name.startswith(("_", "."))]) if (obs_path and obs_path.is_dir()) else 0
-    content.append(f"• Chef's Pantry (Obsidian) : \033[1m{obs_count}\033[0m articles in vault")
+    from .pantry import ingest_obsidian_clippings, ingest_telegram_pantry
+    obs_path = Path(settings.obsidian_clippings_path).expanduser() if getattr(settings, "obsidian_clippings_path", "") else None
+    max_days = getattr(settings, "pantry_max_age_days", 30)
+    if obs_path and obs_path.is_dir():
+        obs_total = len([f for f in obs_path.glob("*.md") if not f.name.startswith(("_", "."))])
+        obs_active = len(ingest_obsidian_clippings(obs_path, is_seen=db.is_seen, max_age_days=max_days))
+        content.append(f"• Chef's Pantry (Obsidian) : \033[1m{obs_active}\033[0m active candidates (last {max_days}d) · {obs_total} in vault")
+    else:
+        content.append(f"• Chef's Pantry (Obsidian) : \033[2mNot configured\033[0m")
+
+    bot_token = getattr(settings, "bot_token", "")
+    admin_chat_id = getattr(settings, "admin_chat_id", "")
+    if bot_token and admin_chat_id:
+        try:
+            last_offset_str = db.get_kv("telegram_pantry_offset")
+            last_offset = int(last_offset_str) if last_offset_str else None
+            tg_entries, _ = ingest_telegram_pantry(
+                bot_token=bot_token,
+                admin_chat_id=admin_chat_id,
+                is_seen=db.is_seen,
+                offset=last_offset,
+                acknowledge=False,
+                max_age_days=max_days,
+            )
+            content.append(f"• Chef's Pantry (Telegram) : \033[1m{len(tg_entries)}\033[0m pending drop(s) in @MellowBreak_bot queue")
+        except Exception:
+            pass
     content.append(f"• Total Articles Ingested  : {stats['seen_total']}")
     content.append(f"• Articles Published       : {stats['posted_total']}")
     content.append(f"• Met Artworks Displayed   : {stats['met_seen_total']}")
