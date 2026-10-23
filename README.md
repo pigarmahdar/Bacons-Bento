@@ -59,13 +59,41 @@ cp .env.example .env      # fill in tokens & chat IDs
 You can run `bento` (if inside `.venv`) or `./bento` directly from the repository root:
 
 ```bash
-./bento new              # Ingest feeds, draft issue, preview in terminal & Telegram
+./bento new              # Ingest feeds, draft issue, save note to Obsidian & preview in Telegram
 ./bento new --dry-run    # Preview candidate issue in terminal without saving or notifying
-./bento preview          # Inspect current pending draft in terminal
-./bento publish          # Confirm and broadcast approved issue to @baconbento
+./bento preview          # Inspect current pending draft in terminal (syncs live Obsidian edits)
+./bento publish          # Publish approved issue (with live Obsidian edits) to @baconbento
 ./bento status           # Inspect hopper metrics, unseen candidate count, and draft status
 ./bento bootstrap        # Record current feed entries as seen without drafting
 ```
+
+### ✍️ File-Backed Obsidian Editing Workflow
+
+Bento issues are treated as contemplative essays rather than fire-and-forget bot broadcasts. The review and editing workflow lives inside your Obsidian vault:
+
+1. **Drafting (`./bento new`):**
+   - Assembles candidates across perimeter RSS and Chef's Pantry.
+   - Evaluates with the Decision Model and synthesizes with the Drafter Model.
+   - Saves a formatted draft note directly to your vault:
+     `Bento Issues/Bacon Bento Vol {N} - {YYYY-MM-DD}.md`
+   - Dispatches behind-the-scenes rationales and layout preview to your private Telegram admin chat.
+
+2. **Polishing in Obsidian:**
+   - Open the note in Obsidian (`Bento Issues/`).
+   - The note contains YAML frontmatter (`issue_number`, `status: pending`, Met artwork metadata, and selected reading entries) followed by the essayistic copy.
+   - Edit freely in your editor of choice using natural Markdown (`[links](...)`, `**bold**`, `*italics*`, `> quotes`) or native HTML (`<b>`, `<i>`, `<a href="...">`).
+
+3. **Terminal Verification (`./bento preview`):**
+   - Reads the latest draft note directly from `Bento Issues/`.
+   - Normalizes Markdown to Telegram-safe HTML and renders ANSI preview in the terminal.
+
+4. **Broadcasting (`./bento publish`):**
+   - Reads your finalized note from Obsidian.
+   - Dispatches the formatted text and high-res Met artwork to `@baconbento`.
+   - Automatically marks the Obsidian note frontmatter as `status: published` (`published_at: <timestamp>`).
+   - Records seen entries and Met artwork in SQLite for deduplication.
+
+Configure your vault folder via `BENTO_ISSUES_PATH` in `.env` (defaults to `~/Documents/Bacon Notes/1. Personal/Github Projects/bacons-bento/Bento Issues`).
 
 Edit [`config/registry.yaml`](config/registry.yaml) to inspect or modify source metadata, editorial rationales, and department filters. It is the single source of truth for sources.
 

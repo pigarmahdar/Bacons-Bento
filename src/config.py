@@ -63,6 +63,7 @@ class Settings:
     db_path: str
     max_posts_per_run: int
     obsidian_clippings_path: str = ""
+    bento_issues_path: str = ""
     pantry_max_age_days: int = 30
 
 
@@ -84,6 +85,10 @@ def load_settings(require_telegram: bool = True) -> Settings:
         obsidian_clippings_path=os.getenv(
             "OBSIDIAN_CLIPPINGS_PATH",
             os.path.expanduser("~/Documents/Bacon Notes/Clippings"),
+        ),
+        bento_issues_path=os.getenv(
+            "BENTO_ISSUES_PATH",
+            os.path.expanduser("~/Documents/Bacon Notes/1. Personal/Github Projects/bacons-bento/Bento Issues"),
         ),
         pantry_max_age_days=int(os.getenv("PANTRY_MAX_AGE_DAYS", "30")),
     )

@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 import logging
+from pathlib import Path
 import sys
 from typing import Optional, Sequence
 
@@ -10,7 +12,14 @@ from .config import load_feeds, load_registry, load_settings
 from .curator import curate_candidates
 from .db import Database
 from .drafter import draft_issue_package
-from .formatter import format_terminal_box, html_to_terminal
+from .drafts import (
+    draft_filename,
+    find_draft_note,
+    parse_draft_note,
+    update_draft_note_frontmatter,
+    write_draft_note,
+)
+from .formatter import format_terminal_box, html_to_terminal, markdown_to_telegram_html
 from .llm import OpenRouterClient
 from .met import fetch_met_artwork
 from .pantry import collect_candidates
@@ -116,6 +125,37 @@ def cmd_new(args: argparse.Namespace) -> int:
     print("\n" + format_terminal_box("🔍 CURATION REVIEW SUMMARY", html_to_terminal(package.review_summary_html)))
     render_issue_terminal(package.issue_html, met_dict)
 
+    # Determine Obsidian draft file path & write note
+    draft_date = datetime.now().strftime("%Y-%m-%d")
+    draft_file_path: Optional[str] = None
+    if getattr(settings, "bento_issues_path", ""):
+        issues_dir = Path(settings.bento_issues_path).expanduser()
+        filename = draft_filename(issue_number, draft_date)
+        target_path = issues_dir / filename
+        meta = {
+            "issue_number": issue_number,
+            "status": "pending",
+            "draft_date": draft_date,
+            "met_artwork": met_dict,
+            "selected_entries": [
+                {
+                    "id": e.id,
+                    "title": e.title,
+                    "link": e.link,
+                    "course": e.course,
+                    "source": e.source_name,
+                }
+                for e in curation.selected_entries
+            ],
+        }
+        try:
+            write_draft_note(target_path, meta, package.issue_html)
+            draft_file_path = str(target_path)
+            print(f"\033[32m✔ Saved draft note to Obsidian: {target_path}\033[0m")
+        except Exception as exc:
+            log.warning("Could not write Obsidian draft note: %s", exc)
+            print(f"\033[33mWarning: Could not write Obsidian draft note: {exc}\033[0m", file=sys.stderr)
+
     if dry_run:
         print("\n\033[33m[Dry Run] Draft generated successfully. No state saved and no Telegram alerts dispatched.\033[0m\n")
         db.close()
@@ -125,6 +165,8 @@ def cmd_new(args: argparse.Namespace) -> int:
     draft_payload = {
         "issue_number": issue_number,
         "issue_html": package.issue_html,
+        "file_path": draft_file_path,
+        "draft_date": draft_date,
         "selected_entries": [
             {
                 "id": e.id,
@@ -141,6 +183,12 @@ def cmd_new(args: argparse.Namespace) -> int:
 
     draft_id = db.save_draft(draft_payload)
     print(f"\n\033[32m✔ Draft saved to database as Issue #{issue_number} (Draft ID: {draft_id})\033[0m")
+
+    if draft_file_path:
+        try:
+            update_draft_note_frontmatter(Path(draft_file_path), {"draft_id": draft_id})
+        except Exception:
+            pass
 
     # 7. Send review preview to Bacon's private Telegram chat
     if not no_notify and settings.bot_token and settings.admin_chat_id:
@@ -171,21 +219,52 @@ def cmd_preview(args: argparse.Namespace) -> int:
     issue_id = getattr(args, "issue_id", None)
     draft = db.get_draft(issue_id)
 
-    if not draft:
+    # Check for an associated Obsidian draft note
+    issues_dir = Path(settings.bento_issues_path).expanduser() if getattr(settings, "bento_issues_path", "") else None
+    draft_file: Optional[Path] = None
+
+    if draft:
+        file_path_str = draft.get("file_path")
+        if file_path_str and Path(file_path_str).exists():
+            draft_file = Path(file_path_str)
+        elif issues_dir and issues_dir.exists():
+            draft_file = find_draft_note(issues_dir, draft.get("issue_number"))
+    elif issues_dir and issues_dir.exists():
+        draft_file = find_draft_note(issues_dir, issue_id)
+
+    if not draft and not draft_file:
         target = f" for ID {issue_id}" if issue_id else ""
         print(f"\033[33mNo pending draft found{target}. Run 'bento new' to draft an issue.\033[0m")
         db.close()
         return 1
 
-    issue_number = draft.get("issue_number", "?")
-    status = draft.get("status", "unknown")
-    created_at = draft.get("created_at", "unknown")
+    issue_number = (draft.get("issue_number") if draft else None) or "?"
+    status = (draft.get("status") if draft else None) or "pending"
+    created_at = (draft.get("created_at") if draft else None) or "recent"
+    issue_html = draft.get("issue_html", "") if draft else ""
+    met_artwork = draft.get("met_artwork") if draft else None
 
-    print(f"\n\033[1mDraft Issue #{issue_number}\033[0m [Status: {status}] (Created: {created_at})")
-    render_issue_terminal(draft.get("issue_html", ""), draft.get("met_artwork"))
+    # If draft note exists in Obsidian, synchronize edits
+    if draft_file and draft_file.exists():
+        try:
+            meta, body = parse_draft_note(draft_file.read_text(encoding="utf-8"))
+            if meta:
+                issue_number = meta.get("issue_number", issue_number)
+                status = meta.get("status", status)
+                if meta.get("met_artwork"):
+                    met_artwork = meta.get("met_artwork")
+            if body:
+                issue_html = markdown_to_telegram_html(body)
+        except Exception as exc:
+            log.warning("Could not read draft file %s: %s", draft_file, exc)
+
+    file_tag = f" [Obsidian: {draft_file.name}]" if draft_file else ""
+    print(f"\n\033[1mDraft Issue #{issue_number}\033[0m [Status: {status}] (Created: {created_at}){file_tag}")
+    render_issue_terminal(issue_html, met_artwork)
 
     if status == "pending":
-        print(f"\nReady to publish? Run: \033[1m./bento publish --issue-id {draft['issue_id']}\033[0m\n")
+        issue_ref = f" --issue-id {draft['issue_id']}" if draft and "issue_id" in draft else ""
+        print(f"\nReady to publish? Run: \033[1m./bento publish{issue_ref}\033[0m\n")
 
     db.close()
     return 0
@@ -199,14 +278,45 @@ def cmd_publish(args: argparse.Namespace) -> int:
     skip_confirm = getattr(args, "yes", False)
 
     draft = db.get_draft(issue_id)
-    if not draft:
+    issues_dir = Path(settings.bento_issues_path).expanduser() if getattr(settings, "bento_issues_path", "") else None
+    draft_file: Optional[Path] = None
+
+    if draft:
+        file_path_str = draft.get("file_path")
+        if file_path_str and Path(file_path_str).exists():
+            draft_file = Path(file_path_str)
+        elif issues_dir and issues_dir.exists():
+            draft_file = find_draft_note(issues_dir, draft.get("issue_number"))
+    elif issues_dir and issues_dir.exists():
+        draft_file = find_draft_note(issues_dir, issue_id)
+
+    if not draft and not draft_file:
         target = f" for ID {issue_id}" if issue_id else ""
         print(f"\033[31mError: No pending draft found{target}.\033[0m", file=sys.stderr)
         db.close()
         return 1
 
-    issue_number = draft.get("issue_number", 1)
-    issue_html = draft.get("issue_html")
+    issue_number = (draft.get("issue_number") if draft else None) or 1
+    issue_html = draft.get("issue_html", "") if draft else ""
+    met_data = draft.get("met_artwork") if draft else None
+    selected_entries = draft.get("selected_entries", []) if draft else []
+
+    # If draft note exists in Obsidian, synchronize edits
+    if draft_file and draft_file.exists():
+        try:
+            meta, body = parse_draft_note(draft_file.read_text(encoding="utf-8"))
+            if meta:
+                issue_number = meta.get("issue_number", issue_number)
+                if meta.get("met_artwork"):
+                    met_data = meta.get("met_artwork")
+                if not selected_entries and meta.get("selected_entries"):
+                    selected_entries = meta.get("selected_entries")
+            if body:
+                issue_html = markdown_to_telegram_html(body)
+            print(f"Loaded edited draft from Obsidian: \033[1m{draft_file.name}\033[0m")
+        except Exception as exc:
+            log.warning("Could not read draft file %s: %s", draft_file, exc)
+
     if not issue_html:
         print("\033[31mError: Draft payload is missing 'issue_html'.\033[0m", file=sys.stderr)
         db.close()
@@ -231,7 +341,6 @@ def cmd_publish(args: argparse.Namespace) -> int:
         return 1
 
     # 2. Send the Met artwork photo if present
-    met_data = draft.get("met_artwork")
     if met_data and met_data.get("image_url"):
         caption = (
             f"🌳 <b>{met_data.get('title')}</b> ({met_data.get('date') or 'n.d.'})\n"
@@ -240,16 +349,33 @@ def cmd_publish(args: argparse.Namespace) -> int:
         )
         try:
             tg.send_photo(met_data["image_url"], caption=caption, chat_id=settings.chat_id)
-            db.mark_met_seen(met_data["object_id"], met_data.get("title", ""))
+            if met_data.get("object_id"):
+                db.mark_met_seen(met_data["object_id"], met_data.get("title", ""))
         except TelegramError as exc:
             print(f"\033[33mWarning: Issue posted, but failed to post Met artwork: {exc}\033[0m", file=sys.stderr)
 
     # 3. Mark selected entries as seen/posted in database
-    for e in draft.get("selected_entries", []):
+    for e in selected_entries:
         db.mark_seen(e["id"], e.get("feed_url", ""), e.get("title", ""), e.get("link", ""), posted=True)
 
     # 4. Mark draft as approved
-    db.approve_draft(draft["issue_id"])
+    if draft and "issue_id" in draft:
+        db.approve_draft(draft["issue_id"])
+
+    # 5. Update Obsidian note frontmatter to status: published
+    if draft_file and draft_file.exists():
+        try:
+            update_draft_note_frontmatter(
+                draft_file,
+                {
+                    "status": "published",
+                    "published_at": datetime.now().isoformat(timespec="seconds"),
+                },
+            )
+            print(f"\033[32m✔ Updated Obsidian note status to 'published' ({draft_file.name})\033[0m")
+        except Exception as exc:
+            log.warning("Could not update Obsidian note status: %s", exc)
+
     print(f"\n\033[32m✔ Issue #{issue_number} successfully approved and broadcast to {settings.chat_id}!\033[0m")
 
     # Notify admin chat

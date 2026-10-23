@@ -164,3 +164,87 @@ def test_cmd_publish_success(monkeypatch, capsys):
     mock_db.mark_met_seen.assert_called_once_with(100, "Gold Mask")
     mock_db.approve_draft.assert_called_once_with(1)
     assert "successfully approved and broadcast" in capsys.readouterr().out
+
+
+def test_cmd_preview_with_obsidian_file(monkeypatch, capsys, tmp_path):
+    issues_dir = tmp_path / "Bento Issues"
+    issues_dir.mkdir()
+    draft_file = issues_dir / "Bacon Bento Vol 1 - 2026-10-22.md"
+    draft_file.write_text(
+        "---\nissue_number: 1\nstatus: pending\n---\n\n"
+        "🍱 <b>Bacon's Bento · Issue #1</b>\n\nEdited in **Obsidian**!",
+        encoding="utf-8",
+    )
+
+    mock_db = MagicMock()
+    mock_db.get_draft.return_value = {
+        "issue_id": 1,
+        "issue_number": 1,
+        "status": "pending",
+        "created_at": "2026-10-22",
+        "file_path": str(draft_file),
+        "issue_html": "Original HTML",
+    }
+    monkeypatch.setattr(
+        cli,
+        "load_settings",
+        lambda **kw: MagicMock(db_path=":memory:", bento_issues_path=str(issues_dir)),
+    )
+    monkeypatch.setattr(cli, "Database", lambda path: mock_db)
+
+    rc = cli.cmd_preview(argparse.Namespace(issue_id=1))
+    assert rc == 0
+    captured = capsys.readouterr().out
+    assert "Obsidian: Bacon Bento Vol 1 - 2026-10-22.md" in captured
+    assert "Edited in" in captured
+    assert "Obsidian" in captured
+
+
+def test_cmd_publish_with_obsidian_file(monkeypatch, capsys, tmp_path):
+    issues_dir = tmp_path / "Bento Issues"
+    issues_dir.mkdir()
+    draft_file = issues_dir / "Bacon Bento Vol 1 - 2026-10-22.md"
+    draft_file.write_text(
+        "---\nissue_number: 1\nstatus: pending\n---\n\n"
+        "🍱 <b>Bacon's Bento · Issue #1</b>\n\nEdited in **Obsidian** with [Link](https://example.com)!",
+        encoding="utf-8",
+    )
+
+    mock_db = MagicMock()
+    mock_db.get_draft.return_value = {
+        "issue_id": 1,
+        "issue_number": 1,
+        "status": "pending",
+        "file_path": str(draft_file),
+        "issue_html": "Original HTML",
+        "selected_entries": [],
+        "met_artwork": None,
+    }
+    mock_tg = MagicMock()
+    monkeypatch.setattr(
+        cli,
+        "load_settings",
+        lambda **kw: MagicMock(
+            db_path=":memory:",
+            bot_token="TOKEN",
+            chat_id="@baconbento",
+            admin_chat_id="",
+            bento_issues_path=str(issues_dir),
+        ),
+    )
+    monkeypatch.setattr(cli, "Database", lambda path: mock_db)
+    monkeypatch.setattr(cli, "TelegramClient", lambda token, chat_id: mock_tg)
+
+    rc = cli.cmd_publish(argparse.Namespace(issue_id=1, yes=True))
+    assert rc == 0
+
+    # Ensure edited HTML was sent to Telegram (markdown normalized to HTML)
+    sent_text = mock_tg.send.call_args[0][0]
+    assert "<b>Obsidian</b>" in sent_text
+    assert '<a href="https://example.com">Link</a>' in sent_text
+
+    # Ensure file frontmatter was updated to published
+    updated_file_content = draft_file.read_text(encoding="utf-8")
+    assert "status: published" in updated_file_content
+    assert "published_at:" in updated_file_content
+

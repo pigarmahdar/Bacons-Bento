@@ -1,4 +1,4 @@
-from src.formatter import TG_LIMIT, format_entry
+from src.formatter import TG_LIMIT, format_entry, markdown_to_telegram_html
 from src.parser import Entry
 
 
@@ -22,3 +22,22 @@ def test_length_cap():
 
 def test_no_summary():
     assert "\n\n\n" not in format_entry(make(summary=""))
+
+
+def test_markdown_to_telegram_html():
+    md = (
+        "🍱 <b>Bacon's Bento · Issue #1</b>\n\n"
+        "Opening with **bold statement** and *italic thought*.\n"
+        "Here is a [link to essay](https://example.com/essay).\n"
+        "> A quiet observation.\n"
+        "> Second line.\n"
+        "And some `inline code`.\n"
+    )
+    result = markdown_to_telegram_html(md)
+    assert "<b>bold statement</b>" in result
+    assert "<i>italic thought</i>" in result
+    assert '<a href="https://example.com/essay">link to essay</a>' in result
+    assert "<blockquote>A quiet observation.\nSecond line.</blockquote>" in result
+    assert "<code>inline code</code>" in result
+    assert "🍱 <b>Bacon's Bento · Issue #1</b>" in result
+

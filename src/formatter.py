@@ -31,6 +31,34 @@ def clean_telegram_html(text: str) -> str:
     return str(soup)
 
 
+def markdown_to_telegram_html(text: str) -> str:
+    """Normalize common Markdown markup into Telegram-safe HTML while preserving existing HTML tags."""
+    # 1. Blockquotes: consecutive lines starting with >
+    def _bq(m: re.Match) -> str:
+        lines = [re.sub(r"^>\s?", "", line) for line in m.group(0).splitlines()]
+        joined = "\n".join(lines)
+        return f"<blockquote>{joined}</blockquote>"
+
+    text = re.sub(r"(?:^>.*(?:\n|$))+", _bq, text, flags=re.MULTILINE)
+
+    # 2. Markdown links: [label](url)
+    text = re.sub(r"\[([^\]]+)\]\((https?://[^\s\)]+)\)", r'<a href="\2">\1</a>', text)
+
+    # 3. Bold: **text** or __text__
+    text = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", text)
+    text = re.sub(r"__([^_]+)__", r"<b>\1</b>", text)
+
+    # 4. Italic: *text* or _text_ (excluding boundaries that look like words or URLs)
+    text = re.sub(r"(?<![*\w])\*([^*\n]+)\*(?![*\w])", r"<i>\1</i>", text)
+    text = re.sub(r"(?<![_\w])_([^_\n]+)_(?![_\w])", r"<i>\1</i>", text)
+
+    # 5. Inline code: `code`
+    text = re.sub(r"`([^`\n]+)`", r"<code>\1</code>", text)
+
+    # 6. Sanitize and auto-balance tags
+    return clean_telegram_html(text)
+
+
 def format_entry(entry: Entry) -> str:
     link = html.escape(entry.link, quote=True)
     title = html.escape(entry.title)
