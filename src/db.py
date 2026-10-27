@@ -91,6 +91,15 @@ class Database:
         self.conn.commit()
         return cur.lastrowid
 
+    def update_draft(self, issue_id: int, payload: dict) -> bool:
+        import json
+        cur = self.conn.execute(
+            "UPDATE drafts SET payload_json = ? WHERE issue_id = ?",
+            (json.dumps(payload), issue_id),
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
+
     def get_draft(self, issue_id: Optional[int] = None) -> Optional[dict]:
         import json
         if issue_id is not None:

@@ -35,7 +35,7 @@ Curated RSS feeds spanning the foundational 4 reading courses and The Met API:
 ### 2. The Chef's Pantry (Personal Reserve)
 A pre-vetted reservoir of articles discovered during personal browsing, funneled through a zero-friction dual capture loop:
 * **Desktop Research (Obsidian Vault):** Articles saved into `Clippings/*.md` with YAML frontmatter (`source`, `title`, `topic`, `description`) are read directly from local storage.
-* **Mobile On-the-Go (Telegram Bot DM):** Web articles encountered while mobile are forwarded privately to `@MellowBreak_bot`. The bot acts as a private airlock, keeping `@baconbento` free of raw link drops.
+* **Mobile On-the-Go (Telegram Bot DM):** Web articles encountered while mobile are forwarded privately to `@MellowBreak_bot`. Forwarded links are automatically converted and saved as markdown clippings into your Obsidian vault (`Clippings/*.md`). You can also include course tags in your message (e.g. `#anchor`, `#lens`, `#craft`, `#garnish`).
 
 > [!important] The 5-Course & Collision Guardrails
 > The Chef's Pantry is a **candidate pool**, not an extra permanent slot. Articles compete for courses (`craft`, `lens`, `anchor`, `garnish`) based on their topic. Bento's **Source Collision Rule** strictly guarantees that at most **one** Chef's Pantry item can appear in any single issue, preventing personal bias from overwhelming the balanced tasting menu.
@@ -62,6 +62,7 @@ You can run `bento` (if inside `.venv`) or `./bento` directly from the repositor
 ./bento new              # Ingest feeds, draft issue, save note to Obsidian & preview in Telegram
 ./bento new --dry-run    # Preview candidate issue in terminal without saving or notifying
 ./bento preview          # Inspect current pending draft in terminal (syncs live Obsidian edits)
+./bento update <URL>     # Replace/feature an article in the pending draft & re-synthesize intro
 ./bento publish          # Publish approved issue (with live Obsidian edits) to @baconbento
 ./bento status           # Inspect hopper metrics, unseen candidate count, and draft status
 ./bento bootstrap        # Record current feed entries as seen without drafting
@@ -75,25 +76,30 @@ Bento issues are treated as contemplative essays rather than fire-and-forget bot
    - Assembles candidates across perimeter RSS and Chef's Pantry.
    - Evaluates with the Decision Model and synthesizes with the Drafter Model.
    - Saves a formatted draft note directly to your vault:
-     `Bento Issues/Bacon Bento Vol {N} - {YYYY-MM-DD}.md`
+     `Bento Output Volumes/Bacon Bento Vol {N} - {YYYY-MM-DD}.md`
    - Dispatches behind-the-scenes rationales and layout preview to your private Telegram admin chat.
 
-2. **Polishing in Obsidian:**
-   - Open the note in Obsidian (`Bento Issues/`).
+2. **Featuring or Swapping Articles (`./bento update`):**
+   - Want to feature an article directly or replace a course selection in the pending draft?
+   - Run `./bento update <URL> [--course craft|anchor|lens|garnish]`.
+   - Fetches the article metadata, mirrors a markdown clipping note into your vault (`Clippings/`), and triggers the Drafter Model to re-synthesize the **Thematic Synthesis Intro** and unified issue copy.
+
+3. **Polishing in Obsidian:**
+   - Open the note in Obsidian (`Bento Output Volumes/`).
    - The note contains YAML frontmatter (`issue_number`, `status: pending`, Met artwork metadata, and selected reading entries) followed by the essayistic copy.
    - Edit freely in your editor of choice using natural Markdown (`[links](...)`, `**bold**`, `*italics*`, `> quotes`) or native HTML (`<b>`, `<i>`, `<a href="...">`).
 
-3. **Terminal Verification (`./bento preview`):**
-   - Reads the latest draft note directly from `Bento Issues/`.
+4. **Terminal Verification (`./bento preview`):**
+   - Reads the latest draft note directly from `Bento Output Volumes/`.
    - Normalizes Markdown to Telegram-safe HTML and renders ANSI preview in the terminal.
 
-4. **Broadcasting (`./bento publish`):**
+5. **Broadcasting (`./bento publish`):**
    - Reads your finalized note from Obsidian.
    - Dispatches the formatted text and high-res Met artwork to `@baconbento`.
    - Automatically marks the Obsidian note frontmatter as `status: published` (`published_at: <timestamp>`).
    - Records seen entries and Met artwork in SQLite for deduplication.
 
-Configure your vault folder via `BENTO_ISSUES_PATH` in `.env` (defaults to `~/Documents/Bacon Notes/1. Personal/Github Projects/bacons-bento/Bento Issues`).
+Configure your vault folder via `BENTO_ISSUES_PATH` in `.env` (defaults to `~/Documents/Bacon Notes/1. Personal/Github Projects/bacons-bento/Bento Output Volumes`).
 
 Edit [`config/registry.yaml`](config/registry.yaml) to inspect or modify source metadata, editorial rationales, and department filters. It is the single source of truth for sources.
 

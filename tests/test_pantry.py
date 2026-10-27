@@ -1,5 +1,6 @@
 """Unit tests for Chef's Pantry ingestion (Obsidian & Telegram)."""
 from pathlib import Path
+import time
 from unittest.mock import patch, MagicMock
 
 from src.pantry import (
@@ -228,4 +229,46 @@ def test_chefs_pantry_collision_protection():
     # Only 1 Chef's Pantry item should be allowed; the second should be dropped due to source collision
     selected_pantry = [e for e in result.selected_entries if e.source_name == "Chef's Pantry"]
     assert len(selected_pantry) == 1
+
+
+@patch("src.pantry.requests.get")
+def test_ingest_telegram_pantry_saves_clipping_and_course_tag(mock_get, tmp_path):
+    clippings_dir = tmp_path / "Clippings"
+    clippings_dir.mkdir()
+
+    sample_response = {
+        "ok": True,
+        "result": [
+            {
+                "update_id": 2001,
+                "message": {
+                    "message_id": 50,
+                    "from": {"id": 12345, "username": "Curator"},
+                    "date": time.time(),
+                    "text": "Deep read on craft: https://example.com/craft-essay #craft",
+                },
+            }
+        ],
+    }
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = sample_response
+    mock_get.return_value = mock_resp
+
+    entries, _ = ingest_telegram_pantry(
+        bot_token="test_token",
+        admin_chat_id="12345",
+        is_seen=lambda eid: False,
+        clippings_dir=clippings_dir,
+    )
+
+    assert len(entries) == 1
+    assert entries[0].course == "craft"
+    assert entries[0].link == "https://example.com/craft-essay"
+
+    # Verify clipping file was written to clippings_dir
+    files = list(clippings_dir.glob("*.md"))
+    assert len(files) == 1
+    content = files[0].read_text(encoding="utf-8")
+    assert "https://example.com/craft-essay" in content
+    assert 'topic:\n  - "craft"' in content
 

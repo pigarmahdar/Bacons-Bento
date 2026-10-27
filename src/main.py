@@ -321,7 +321,7 @@ def run_approve(issue_id: Optional[int] = None) -> int:
 
 def main() -> None:
     # If a CLI subcommand is passed, route directly to cli.main
-    subcommands = {"new", "draft", "preview", "show", "publish", "approve", "status", "bootstrap"}
+    subcommands = {"new", "draft", "preview", "show", "publish", "approve", "status", "bootstrap", "update"}
     if len(sys.argv) > 1 and sys.argv[1] in subcommands:
         from . import cli
         sys.exit(cli.main(sys.argv[1:]))

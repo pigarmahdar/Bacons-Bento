@@ -73,6 +73,8 @@ def load_settings(require_telegram: bool = True) -> Settings:
     chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
     if require_telegram and (not token or not chat_id):
         raise RuntimeError("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set")
+    raw_db = os.getenv("DB_PATH", "data/bento_history.db")
+    db_path = str((ROOT / raw_db).resolve()) if not os.path.isabs(raw_db) else raw_db
     return Settings(
         bot_token=token,
         chat_id=chat_id,
@@ -80,7 +82,7 @@ def load_settings(require_telegram: bool = True) -> Settings:
         openrouter_api_key=os.getenv("OPENROUTER_API_KEY", ""),
         openrouter_decision_model=os.getenv("OPENROUTER_DECISION_MODEL", "xiaomi/mimo-v2.6-flash"),
         openrouter_drafting_model=os.getenv("OPENROUTER_DRAFTING_MODEL", "xiaomi/mimo-v2.6-flash"),
-        db_path=os.getenv("DB_PATH", str(ROOT / "data" / "bento_history.db")),
+        db_path=db_path,
         max_posts_per_run=int(os.getenv("MAX_POSTS_PER_RUN", "5")),
         obsidian_clippings_path=os.getenv(
             "OBSIDIAN_CLIPPINGS_PATH",
@@ -88,7 +90,7 @@ def load_settings(require_telegram: bool = True) -> Settings:
         ),
         bento_issues_path=os.getenv(
             "BENTO_ISSUES_PATH",
-            os.path.expanduser("~/Documents/Bacon Notes/1. Personal/Github Projects/bacons-bento/Bento Issues"),
+            os.path.expanduser("~/Documents/Bacon Notes/1. Personal/Github Projects/bacons-bento/Bento Output Volumes"),
         ),
         pantry_max_age_days=int(os.getenv("PANTRY_MAX_AGE_DAYS", "30")),
     )

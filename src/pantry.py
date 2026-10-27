@@ -121,7 +121,7 @@ def ingest_obsidian_clippings(
             log.debug("Skipping stale Obsidian clipping %s (ts: %s < cutoff: %s)", file_path.name, effective_ts, cutoff)
             continue
 
-        eid = entry_id("obsidian", link)
+        eid = entry_id(None, link)
         if is_seen(eid):
             continue
 
@@ -156,22 +156,93 @@ def ingest_obsidian_clippings(
     return entries
 
 
-def _fetch_page_title(url: str) -> str:
-    """Best-effort page title resolution for bare links."""
+def fetch_page_metadata(url: str) -> Tuple[str, str]:
+    """Best-effort page title and description resolution."""
+    title = ""
+    desc = ""
     try:
         resp = requests.get(
             url,
             headers={"User-Agent": USER_AGENT},
-            timeout=3.5,
+            timeout=4.0,
             allow_redirects=True,
         )
         if resp.status_code == 200:
-            soup = BeautifulSoup(resp.text[:50000], "html.parser")
+            soup = BeautifulSoup(resp.text[:60000], "html.parser")
             if soup.title and soup.title.string:
-                return clean_text(soup.title.string, 200)
+                title = clean_text(soup.title.string, 200)
+
+            desc_tag = (
+                soup.find("meta", attrs={"name": "description"})
+                or soup.find("meta", attrs={"property": "og:description"})
+                or soup.find("meta", attrs={"name": "twitter:description"})
+            )
+            if desc_tag and desc_tag.get("content"):
+                desc = clean_text(desc_tag["content"], 300)
     except Exception:
         pass
-    return ""
+    return title, desc
+
+
+def _fetch_page_title(url: str) -> str:
+    """Best-effort page title resolution for bare links."""
+    return fetch_page_metadata(url)[0]
+
+
+def save_clipping_note(
+    clippings_dir: Path | str,
+    title: str,
+    url: str,
+    summary: str = "",
+    course: str = "lens",
+    date_ts: float = 0.0,
+    commentary: str = "",
+) -> Optional[Path]:
+    """Save an article clipping note directly into the Obsidian Clippings vault."""
+    path = Path(clippings_dir).expanduser()
+    if not path.exists() or not path.is_dir():
+        return None
+
+    date_str = (
+        datetime.datetime.fromtimestamp(date_ts).strftime("%Y-%m-%d %H:%M:%S")
+        if date_ts > 0
+        else datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    )
+    clean_name = re.sub(r'[\\/*?:"<>|]', "", title).strip() or "Clipping"
+    target_file = path / f"{clean_name[:60]}.md"
+
+    if target_file.exists():
+        try:
+            if url in target_file.read_text(encoding="utf-8"):
+                return target_file
+        except Exception:
+            pass
+        target_file = path / f"{clean_name[:50]} ({int(time.time())}).md"
+
+    body_text = f"\n{commentary.strip()}\n" if commentary.strip() else ""
+    safe_title = title.replace('"', '\\"')
+    safe_summary = summary.replace('"', '\\"')
+    content = (
+        "---\n"
+        f'title: "{safe_title}"\n'
+        f'source: "{url}"\n'
+        "topic:\n"
+        f'  - "{course}"\n'
+        f'description: "{safe_summary}"\n'
+        f'created: "{date_str}"\n'
+        "tags:\n"
+        "  - clippings\n"
+        "  - telegram\n"
+        "---\n"
+        f"{body_text}"
+    )
+    try:
+        target_file.write_text(content, encoding="utf-8")
+        log.info("Saved clipping note to Obsidian: %s", target_file.name)
+        return target_file
+    except Exception as exc:
+        log.warning("Could not write clipping note %s: %s", target_file, exc)
+        return None
 
 
 def ingest_telegram_pantry(
@@ -181,6 +252,7 @@ def ingest_telegram_pantry(
     offset: Optional[int] = None,
     acknowledge: bool = False,
     max_age_days: int = 30,
+    clippings_dir: Optional[Path | str] = None,
 ) -> Tuple[List[Entry], Optional[int]]:
     """Poll private Telegram Bot messages forwarded by the admin curator within recency window."""
     if not bot_token:
@@ -244,9 +316,17 @@ def ingest_telegram_pantry(
         if not urls:
             continue
 
-        # Extract title/commentary from text excluding URLs
-        title_text = re.sub(r"https?://[^\s<>\"']+", "", text)
-        title_text = clean_text(title_text.strip(), 200)
+        # Detect course from hashtag/keyword (default to lens)
+        course = "lens"
+        for c in ("anchor", "lens", "craft", "garnish"):
+            if f"#{c}" in text.lower() or f"course:{c}" in text.lower():
+                course = c
+                break
+
+        # Extract title/commentary from text excluding URLs and tags
+        clean_prompt_text = re.sub(r"https?://[^\s<>\"']+", "", text)
+        clean_prompt_text = re.sub(r"#(anchor|lens|craft|garnish)\b", "", clean_prompt_text, flags=re.IGNORECASE)
+        title_text = clean_text(clean_prompt_text.strip(), 200)
 
         date_ts = float(msg.get("date", 0))
 
@@ -255,17 +335,32 @@ def ingest_telegram_pantry(
             if not target_url.startswith("http") or target_url in seen_links:
                 continue
 
-            eid = entry_id("telegram", target_url)
+            eid = entry_id(None, target_url)
             if is_seen(eid):
                 continue
 
             seen_links.add(target_url)
 
-            # If user provided a title in text, use it; otherwise fetch HTML <title>
+            # If user provided a title in text, use it; otherwise fetch HTML <title> & description
             final_title = title_text
+            meta_desc = ""
             if not final_title or len(final_title) < 5:
-                resolved_title = _fetch_page_title(target_url)
+                resolved_title, meta_desc = fetch_page_metadata(target_url)
                 final_title = resolved_title or target_url.split("//")[-1].split("/")[0]
+
+            summary = clean_text(title_text or meta_desc or f"Shared via Telegram: {target_url}", 280)
+
+            # Automatically mirror to Obsidian Clippings folder if configured
+            if clippings_dir:
+                save_clipping_note(
+                    clippings_dir=clippings_dir,
+                    title=final_title,
+                    url=target_url,
+                    summary=summary,
+                    course=course,
+                    date_ts=date_ts,
+                    commentary=title_text if title_text != final_title else "",
+                )
 
             entries.append(
                 Entry(
@@ -275,9 +370,9 @@ def ingest_telegram_pantry(
                     source_name="Chef's Pantry",
                     title=final_title,
                     link=target_url,
-                    summary=clean_text(title_text or f"Shared via Telegram: {target_url}", 280),
+                    summary=summary,
                     published=date_ts,
-                    course="lens",  # default to The Lens
+                    course=course,
                 )
             )
 
@@ -344,6 +439,7 @@ def collect_candidates(
             offset=last_offset,
             acknowledge=(not dry_run),
             max_age_days=max_age_days,
+            clippings_dir=getattr(settings, "obsidian_clippings_path", None) if not dry_run else None,
         )
         for e in telegram_entries:
             seen_in_batch.add(e.id)

@@ -65,6 +65,12 @@ def test_cli_parser_subcommands():
     assert parser.parse_args(["status"]).subcommand == "status"
     assert parser.parse_args(["bootstrap"]).subcommand == "bootstrap"
 
+    # update
+    args_upd = parser.parse_args(["update", "https://example.com/art", "--course", "craft"])
+    assert args_upd.subcommand == "update"
+    assert args_upd.url == "https://example.com/art"
+    assert args_upd.course == "craft"
+
 
 def test_cmd_status(monkeypatch, capsys):
     mock_db = MagicMock()
@@ -247,4 +253,74 @@ def test_cmd_publish_with_obsidian_file(monkeypatch, capsys, tmp_path):
     updated_file_content = draft_file.read_text(encoding="utf-8")
     assert "status: published" in updated_file_content
     assert "published_at:" in updated_file_content
+
+
+def test_cmd_update_no_pending_draft(monkeypatch, capsys):
+    mock_db = MagicMock()
+    mock_db.get_draft.return_value = None
+    monkeypatch.setattr(cli, "load_settings", lambda **kw: MagicMock(db_path=":memory:"))
+    monkeypatch.setattr(cli, "Database", lambda path: mock_db)
+
+    rc = cli.cmd_update(argparse.Namespace(url="https://example.com/essay", link=None, course=None, issue_id=None, no_notify=True))
+    assert rc == 1
+    assert "No pending draft found" in capsys.readouterr().err
+
+
+def test_cmd_update_success(monkeypatch, capsys, tmp_path):
+    issues_dir = tmp_path / "Issues"
+    issues_dir.mkdir()
+    draft_file = issues_dir / "Bacon Bento Vol 1 - 2026-10-26.md"
+    draft_file.write_text(
+        "---\nissue_number: 1\nstatus: pending\n---\n<b>Old issue text</b>\n",
+        encoding="utf-8",
+    )
+
+    mock_db = MagicMock()
+    mock_db.get_draft.return_value = {
+        "issue_id": 1,
+        "issue_number": 1,
+        "status": "pending",
+        "file_path": str(draft_file),
+        "selected_entries": [
+            {"id": "old_craft", "course": "craft", "title": "Old Craft", "link": "https://old.com"}
+        ],
+        "met_artwork": None,
+    }
+
+    monkeypatch.setattr(
+        cli,
+        "load_settings",
+        lambda **kw: MagicMock(
+            db_path=":memory:",
+            bot_token="",
+            chat_id="@baconbento",
+            admin_chat_id="",
+            bento_issues_path=str(issues_dir),
+            obsidian_clippings_path="",
+            openrouter_api_key="test_key",
+            openrouter_drafting_model="test_model",
+        ),
+    )
+    monkeypatch.setattr(cli, "Database", lambda path: mock_db)
+    monkeypatch.setattr(cli, "fetch_page_metadata", lambda url: ("New Craft Masterpiece", "A profound essay on tools."))
+    
+    mock_pkg = MagicMock()
+    mock_pkg.issue_html = "🍱 <b>Bacon's Bento · Issue #1</b>\n🩺 <b>The Craft</b>: New Craft Masterpiece"
+    mock_pkg.review_summary_html = "Review summary"
+    mock_pkg.met_artwork = None
+    monkeypatch.setattr(cli, "draft_issue_package", lambda **kw: mock_pkg)
+
+    rc = cli.cmd_update(argparse.Namespace(url="https://example.com/new-craft", link=None, course="craft", issue_id=1, no_notify=True))
+    assert rc == 0
+    assert mock_db.update_draft.called
+    
+    # Check that SQLite was called with updated entries
+    call_args = mock_db.update_draft.call_args[0]
+    updated_payload = call_args[1]
+    assert any(e["title"] == "New Craft Masterpiece" and e["course"] == "craft" for e in updated_payload["selected_entries"])
+    assert not any(e["title"] == "Old Craft" for e in updated_payload["selected_entries"])
+
+    # Check that Obsidian note was updated
+    note_content = draft_file.read_text(encoding="utf-8")
+    assert "New Craft Masterpiece" in note_content
 

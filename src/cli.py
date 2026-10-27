@@ -6,11 +6,13 @@ from datetime import datetime
 import logging
 from pathlib import Path
 import sys
+import time
 from typing import Optional, Sequence
+from urllib.parse import urlsplit
 
 from .config import load_feeds, load_registry, load_settings
-from .curator import curate_candidates
-from .db import Database
+from .curator import CurationDecision, CurationResult, curate_candidates
+from .db import Database, entry_id
 from .drafter import draft_issue_package
 from .drafts import (
     draft_filename,
@@ -21,9 +23,9 @@ from .drafts import (
 )
 from .formatter import format_terminal_box, html_to_terminal, markdown_to_telegram_html
 from .llm import OpenRouterClient
-from .met import fetch_met_artwork
-from .pantry import collect_candidates
-from .parser import fetch_feed
+from .met import MetArtwork, fetch_met_artwork
+from .pantry import collect_candidates, fetch_page_metadata, save_clipping_note
+from .parser import Entry, fetch_feed
 from .telegram import TelegramClient, TelegramError
 
 log = logging.getLogger("bento")
@@ -392,6 +394,191 @@ def cmd_publish(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_update(args: argparse.Namespace) -> int:
+    """Update a pending draft with a featured article URL and re-synthesize."""
+    settings = load_settings(require_telegram=False)
+    db = Database(settings.db_path)
+    target_url = getattr(args, "url", None) or getattr(args, "link", None)
+    course_arg = getattr(args, "course", None)
+    issue_id = getattr(args, "issue_id", None)
+    no_notify = getattr(args, "no_notify", False)
+
+    draft = db.get_draft(issue_id)
+    issues_dir = Path(settings.bento_issues_path).expanduser() if getattr(settings, "bento_issues_path", "") else None
+    draft_file: Optional[Path] = None
+
+    if draft:
+        file_path_str = draft.get("file_path")
+        if file_path_str and Path(file_path_str).exists():
+            draft_file = Path(file_path_str)
+        elif issues_dir and issues_dir.exists():
+            draft_file = find_draft_note(issues_dir, draft.get("issue_number"))
+    elif issues_dir and issues_dir.exists():
+        draft_file = find_draft_note(issues_dir, issue_id)
+
+    if not draft or draft.get("status") != "pending":
+        target = f" for ID {issue_id}" if issue_id else ""
+        print(f"\033[31mError: No pending draft found{target} to update. Run './bento new' first.\033[0m", file=sys.stderr)
+        db.close()
+        return 1
+
+    if not target_url:
+        print("\033[31mError: Please provide an article URL to feature (e.g. ./bento update https://example.com/article).\033[0m", file=sys.stderr)
+        db.close()
+        return 1
+
+    target_url = target_url.strip()
+    if not target_url.startswith("http"):
+        print(f"\033[31mError: Invalid URL '{target_url}'. Must begin with http:// or https://\033[0m", file=sys.stderr)
+        db.close()
+        return 1
+
+    # 1. Fetch metadata for the article
+    print(f"Fetching metadata for \033[1m{target_url}\033[0m...")
+    title, summary = fetch_page_metadata(target_url)
+    domain = urlsplit(target_url).netloc
+    if domain.startswith("www."):
+        domain = domain[4:]
+    final_title = title or domain
+    final_summary = summary or f"Featured read from {domain}."
+
+    course = (course_arg or "lens").lower()
+    if course not in ("anchor", "lens", "craft", "garnish"):
+        print(f"\033[31mError: Invalid course '{course}'. Must be one of: anchor, lens, craft, garnish\033[0m", file=sys.stderr)
+        db.close()
+        return 1
+
+    eid = entry_id(None, target_url)
+    new_entry = {
+        "id": eid,
+        "feed_url": "manual://update",
+        "title": final_title,
+        "link": target_url,
+        "course": course,
+        "source": domain,
+        "summary": final_summary,
+    }
+
+    # 2. Automatically save as clipping note if Obsidian vault configured
+    if getattr(settings, "obsidian_clippings_path", ""):
+        save_clipping_note(
+            clippings_dir=settings.obsidian_clippings_path,
+            title=final_title,
+            url=target_url,
+            summary=final_summary,
+            course=course,
+            commentary="Featured via 'bento update'",
+        )
+
+    # 3. Update draft's selected_entries: replace entry for that course
+    existing_entries = draft.get("selected_entries", [])
+    updated_entries = [e for e in existing_entries if e.get("course") != course]
+    updated_entries.append(new_entry)
+
+    course_order = {"anchor": 0, "lens": 1, "craft": 2, "garnish": 3}
+    updated_entries.sort(key=lambda e: course_order.get(e.get("course", "lens"), 99))
+
+    issue_number = draft.get("issue_number", 1)
+    met_data = draft.get("met_artwork")
+    met_artwork = None
+    if met_data:
+        met_artwork = MetArtwork(
+            object_id=met_data.get("object_id", 0),
+            title=met_data.get("title", ""),
+            artist=met_data.get("artist", ""),
+            date=met_data.get("date", ""),
+            medium=met_data.get("medium", ""),
+            department=met_data.get("department", ""),
+            object_url=met_data.get("object_url", ""),
+            image_url=met_data.get("image_url", ""),
+        )
+
+    # 4. Re-synthesize issue using Drafter Model
+    print(f"Re-synthesizing Issue #{issue_number} with Drafter Model ({settings.openrouter_drafting_model})...")
+    llm_client = OpenRouterClient(api_key=settings.openrouter_api_key)
+
+    decisions = {}
+    selected_objs = []
+    for e in updated_entries:
+        entry_obj = Entry(
+            id=e["id"],
+            feed_url=e.get("feed_url", ""),
+            source_tag="Curator",
+            source_name=e.get("source", domain),
+            title=e["title"],
+            link=e["link"],
+            summary=e.get("summary", ""),
+            published=time.time(),
+            course=e["course"],
+        )
+        decisions[e["course"]] = CurationDecision(
+            course=e["course"],
+            entry=entry_obj,
+            rationale=f"Curator featured article for {e['course'].title()}",
+        )
+        selected_objs.append(entry_obj)
+
+    curation = CurationResult(decisions=decisions, selected_entries=selected_objs)
+
+    package = draft_issue_package(
+        curation=curation,
+        met_artwork=met_artwork,
+        issue_number=issue_number,
+        client=llm_client,
+        model=settings.openrouter_drafting_model,
+    )
+
+    # 5. Update SQLite Database
+    draft["issue_html"] = package.issue_html
+    draft["selected_entries"] = updated_entries
+    db.update_draft(draft["issue_id"], draft)
+
+    # 6. Update Obsidian draft note
+    if draft_file and draft_file.exists():
+        try:
+            write_draft_note(
+                draft_file,
+                {
+                    "issue_number": issue_number,
+                    "status": "pending",
+                    "draft_date": draft.get("draft_date", datetime.now().strftime("%Y-%m-%d")),
+                    "met_artwork": met_data,
+                    "selected_entries": updated_entries,
+                    "draft_id": draft["issue_id"],
+                },
+                package.issue_html,
+            )
+            print(f"\033[32m✔ Synchronized updated draft to Obsidian: {draft_file.name}\033[0m")
+        except Exception as exc:
+            log.warning("Could not update Obsidian note: %s", exc)
+
+    # 7. Dispatch updated review to Telegram admin chat
+    if not no_notify and settings.bot_token and settings.admin_chat_id:
+        tg = TelegramClient(settings.bot_token, settings.admin_chat_id)
+        try:
+            tg.send(package.review_summary_html, chat_id=settings.admin_chat_id)
+            if package.met_artwork:
+                met = package.met_artwork
+                caption = (
+                    f"🌳 <b>{met.title}</b> ({met.date or 'n.d.'})\n"
+                    f"<i>{met.artist or 'Unknown Artist'}</i> · {met.medium}\n"
+                    f"{met.department}, <a href=\"{met.object_url}\">The Met Collection (CC0)</a>"
+                )
+                tg.send_photo(met.image_url, caption=caption, chat_id=settings.admin_chat_id)
+            print(f"\033[32m✔ Dispatched updated review to admin chat ({settings.admin_chat_id})\033[0m")
+        except TelegramError as exc:
+            print(f"\033[33mWarning: Failed to send Telegram review: {exc}\033[0m", file=sys.stderr)
+
+    # 8. Terminal output
+    print("\n" + format_terminal_box("🔍 UPDATED DRAFT REVIEW SUMMARY", html_to_terminal(package.review_summary_html)))
+    render_issue_terminal(package.issue_html, met_data)
+    print(f"\n\033[32m✔ Issue #{issue_number} updated with '{final_title}' ({course.title()})!\033[0m")
+    print(f"Ready to publish? Run: \033[1m./bento publish\033[0m\n")
+
+    db.close()
+    return 0
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     """Display hopper metrics and current draft state."""
     settings = load_settings(require_telegram=False)
@@ -496,6 +683,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_pub.add_argument("--issue-id", type=int, default=None, help="Specific draft issue ID (defaults to latest pending)")
     p_pub.add_argument("-y", "--yes", action="store_true", help="Skip interactive confirmation")
     p_pub.set_defaults(func=cmd_publish)
+
+    # bento update
+    p_upd = subparsers.add_parser("update", help="Update pending draft with a featured article URL and re-synthesize")
+    p_upd.add_argument("url", nargs="?", default=None, help="URL of article to feature")
+    p_upd.add_argument("--link", "--url", dest="link", default=None, help="Alternative flag for article URL")
+    p_upd.add_argument("--course", choices=["anchor", "lens", "craft", "garnish"], default=None, help="Target course for article (default: lens)")
+    p_upd.add_argument("--issue-id", type=int, default=None, help="Specific draft issue ID (defaults to latest pending)")
+    p_upd.add_argument("--no-notify", action="store_true", help="Skip sending updated review to Telegram admin chat")
+    p_upd.set_defaults(func=cmd_update)
 
     # bento status
     p_stat = subparsers.add_parser("status", help="Inspect hopper metrics and pending draft state")
