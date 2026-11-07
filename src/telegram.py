@@ -65,7 +65,7 @@ class TelegramClient:
         payload = {
             "chat_id": target_chat,
             "photo": photo_url,
-            "caption": clean_telegram_html(caption)[:1024],
+            "caption": clean_telegram_html(caption),
             "parse_mode": "HTML",
         }
         self._post("sendPhoto", payload)

@@ -1,12 +1,15 @@
 """Telegram HTML message templating."""
 from __future__ import annotations
 
+from html.parser import HTMLParser
 import html
 import re
+from typing import Any, Optional
 
 from .parser import Entry
 
 TG_LIMIT = 4096
+TG_CAPTION_LIMIT = 1024
 
 
 def _hashtag(tag: str) -> str:
@@ -14,6 +17,94 @@ def _hashtag(tag: str) -> str:
 
 
 VALID_TG_TAGS = {"b", "strong", "i", "em", "u", "ins", "s", "strike", "del", "span", "tg-spoiler", "a", "code", "pre", "blockquote"}
+
+
+class _TelegramHTMLValidator(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.stack: list[str] = []
+        self.errors: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, Optional[str]]]) -> None:
+        if tag not in VALID_TG_TAGS:
+            self.errors.append(f"Disallowed HTML tag: <{tag}>")
+            return
+        if tag == "a":
+            href = dict(attrs).get("href")
+            if not href:
+                self.errors.append("<a href='...'> tag missing 'href' attribute")
+        self.stack.append(tag)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag not in VALID_TG_TAGS:
+            return
+        if not self.stack:
+            self.errors.append(f"Unexpected closing tag </{tag}> with no matching open tag")
+        elif self.stack[-1] != tag:
+            self.errors.append(f"Mismatched closing tag </{tag}>; expected </{self.stack[-1]}>")
+            if tag in self.stack:
+                while self.stack and self.stack[-1] != tag:
+                    self.stack.pop()
+                if self.stack:
+                    self.stack.pop()
+        else:
+            self.stack.pop()
+
+    def close(self) -> None:
+        super().close()
+        for unclosed in reversed(self.stack):
+            self.errors.append(f"Unclosed HTML tag: <{unclosed}>")
+
+
+def validate_telegram_html(text: str, max_length: int = TG_LIMIT) -> list[str]:
+    """Validate HTML tag nesting, allowed Telegram tags, markdown leaks, and length limits."""
+    errors: list[str] = []
+    if len(text) > max_length:
+        errors.append(f"Length ({len(text)}) exceeds Telegram limit of {max_length} characters")
+
+    # Guard against unclosed markdown tokens that did not convert
+    if text.count("**") % 2 != 0:
+        errors.append("Unclosed markdown bold delimiter '**'")
+    if text.count("```") % 2 != 0:
+        errors.append("Unclosed markdown code block delimiter '```'")
+    elif text.count("`") % 2 != 0:
+        errors.append("Unclosed markdown inline code delimiter '`'")
+
+    validator = _TelegramHTMLValidator()
+    try:
+        validator.feed(text)
+        validator.close()
+    except Exception as exc:
+        errors.append(f"HTML parsing error: {exc}")
+    errors.extend(validator.errors)
+    return errors
+
+
+def format_met_caption(met: Any) -> str:
+    """Format Met artwork metadata into a clean Telegram HTML caption."""
+    if not met:
+        return ""
+    if isinstance(met, dict):
+        title = met.get("title") or "Untitled"
+        date = met.get("date") or "n.d."
+        artist = met.get("artist") or "Unknown Artist"
+        medium = met.get("medium") or ""
+        department = met.get("department") or ""
+        object_url = met.get("object_url") or ""
+    else:
+        title = getattr(met, "title", "") or "Untitled"
+        date = getattr(met, "date", "") or "n.d."
+        artist = getattr(met, "artist", "") or "Unknown Artist"
+        medium = getattr(met, "medium", "") or ""
+        department = getattr(met, "department", "") or ""
+        object_url = getattr(met, "object_url", "") or ""
+
+    parts = [
+        f"🌳 <b>{title}</b> ({date})",
+        f"<i>{artist}</i>" + (f" · {medium}" if medium else ""),
+        f"{department}, <a href=\"{object_url}\">The Met Collection (CC0)</a>" if object_url else department,
+    ]
+    return "\n".join(p for p in parts if p)
 
 
 def clean_telegram_html(text: str) -> str:

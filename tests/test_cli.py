@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src import cli
+from src.config import Feed
 from src.formatter import format_terminal_box, html_to_terminal
 
 
@@ -61,6 +62,15 @@ def test_cli_parser_subcommands():
     assert args_app.subcommand == "approve"
     assert args_app.issue_id == 5
 
+    # lint / check
+    args_lint = parser.parse_args(["lint", "--issue-id", "12"])
+    assert args_lint.subcommand == "lint"
+    assert args_lint.issue_id == 12
+
+    args_check = parser.parse_args(["check"])
+    assert args_check.subcommand == "check"
+    assert args_check.issue_id is None
+
     # status & bootstrap
     assert parser.parse_args(["status"]).subcommand == "status"
     assert parser.parse_args(["bootstrap"]).subcommand == "bootstrap"
@@ -84,16 +94,64 @@ def test_cmd_status(monkeypatch, capsys):
     }
     monkeypatch.setattr(cli, "load_settings", lambda **kw: MagicMock(db_path=":memory:"))
     monkeypatch.setattr(cli, "Database", lambda path: mock_db)
-    monkeypatch.setattr(cli, "load_feeds", lambda: [MagicMock(), MagicMock()])
+    monkeypatch.setattr(cli, "load_feeds", lambda: [MagicMock(url="f1", name="Feed 1", course="anchor"), MagicMock(url="f2", name="Feed 2", course="lens")])
+    monkeypatch.setattr(
+        cli,
+        "collect_candidates",
+        lambda feeds, settings, db, dry_run: ([], {"rss": 0, "obsidian": 0, "telegram": 0, "total": 0}),
+    )
 
     rc = cli.cmd_status(argparse.Namespace())
     assert rc == 0
     captured = capsys.readouterr().out
     assert "Active Feeds in Registry :" in captured
+    assert "Course Hopper Depth:" in captured
     assert "Total Articles Ingested  : 42" in captured
     assert "Articles Published       : 10" in captured
     assert "Published Issues Total   :" in captured
     assert "None (ready for new issue" in captured
+
+
+def test_cmd_status_with_course_depth_and_starvation(monkeypatch, capsys):
+    mock_db = MagicMock()
+    mock_db.get_hopper_stats.return_value = {
+        "seen_total": 10,
+        "posted_total": 2,
+        "met_seen_total": 1,
+        "published_count": 1,
+        "last_published": None,
+        "pending_draft": None,
+    }
+    f_anchor = Feed(name="Anchor Feed", url="https://feed.anchor.com", tag="anchor", course="anchor")
+    f_craft = Feed(name="Craft Feed", url="https://feed.craft.com", tag="craft", course="craft")
+    monkeypatch.setattr(cli, "load_settings", lambda **kw: MagicMock(db_path=":memory:"))
+    monkeypatch.setattr(cli, "Database", lambda path: mock_db)
+    monkeypatch.setattr(cli, "load_feeds", lambda: [f_anchor, f_craft])
+
+    # 2 candidates for anchor, 1 candidate for lens, 0 for craft, 0 for garnish
+    entries = [
+        MagicMock(id="e1", course="anchor", feed_url="https://feed.anchor.com"),
+        MagicMock(id="e2", course="anchor", feed_url="https://feed.anchor.com"),
+        MagicMock(id="e3", course="lens", feed_url=""),
+    ]
+    monkeypatch.setattr(
+        cli,
+        "collect_candidates",
+        lambda feeds, settings, db, dry_run: (entries, {"rss": 2, "obsidian": 1, "telegram": 0, "total": 3}),
+    )
+
+    rc = cli.cmd_status(argparse.Namespace())
+    assert rc == 0
+    captured = capsys.readouterr().out
+    assert "Anchor   : 2 candidates" in captured
+    assert "Healthy" in captured
+    assert "Lens     : 1 candidates" in captured
+    assert "LOW" in captured
+    assert "Craft    : 0 candidates" in captured
+    assert "STARVING" in captured
+    assert "Starving Feeds (1 with 0 unseen items)" in captured
+    assert "Craft Feed (Craft)" in captured
+
 
 
 
@@ -363,4 +421,72 @@ def test_cmd_update_auto_assigns_next_open_course(monkeypatch):
     cli.cmd_update(argparse.Namespace(url="https://example.com/second", link=None, course=None, issue_id=1, no_notify=True))
     assert [e["course"] for e in state["selected_entries"]] == ["anchor", "lens"]
     assert {e["link"] for e in state["selected_entries"]} == {"https://example.com/first", "https://example.com/second"}
+
+
+def test_cmd_lint_success(monkeypatch, capsys):
+    mock_db = MagicMock()
+    mock_db.get_draft.return_value = {
+        "issue_id": 1,
+        "issue_number": 5,
+        "status": "pending",
+        "created_at": "2026-11-07",
+        "issue_html": "<b>Clean Issue</b> with <a href='https://example.com'>link</a>.",
+        "met_artwork": {
+            "title": "Sunflowers",
+            "artist": "Van Gogh",
+            "date": "1888",
+            "medium": "Oil",
+            "department": "Paintings",
+            "object_url": "https://example.com/art",
+        },
+    }
+    monkeypatch.setattr(cli, "load_settings", lambda **kw: MagicMock(db_path=":memory:"))
+    monkeypatch.setattr(cli, "Database", lambda path: mock_db)
+
+    rc = cli.cmd_lint(argparse.Namespace(issue_id=1))
+    assert rc == 0
+    captured = capsys.readouterr().out
+    assert "passed Telegram format & character guards" in captured
+
+
+def test_cmd_lint_failure(monkeypatch, capsys):
+    mock_db = MagicMock()
+    mock_db.get_draft.return_value = {
+        "issue_id": 1,
+        "issue_number": 5,
+        "status": "pending",
+        "created_at": "2026-11-07",
+        "issue_html": "<b>Unclosed bold text with **markdown leak",
+        "met_artwork": None,
+    }
+    monkeypatch.setattr(cli, "load_settings", lambda **kw: MagicMock(db_path=":memory:"))
+    monkeypatch.setattr(cli, "Database", lambda path: mock_db)
+
+    rc = cli.cmd_lint(argparse.Namespace(issue_id=1))
+    assert rc == 1
+    captured = capsys.readouterr().out
+    assert "failed Telegram lint guards" in captured
+    assert "Unclosed HTML tag: <b>" in captured
+
+
+def test_cmd_publish_blocked_by_guard(monkeypatch, capsys):
+    mock_db = MagicMock()
+    mock_db.get_draft.return_value = {
+        "issue_id": 1,
+        "issue_number": 5,
+        "status": "pending",
+        "issue_html": "<b>Broken <i>Nesting</b></i>",
+        "selected_entries": [],
+        "met_artwork": None,
+    }
+    mock_tg = MagicMock()
+    monkeypatch.setattr(cli, "load_settings", lambda **kw: MagicMock(db_path=":memory:", bot_token="TOKEN", chat_id="@baconbento"))
+    monkeypatch.setattr(cli, "Database", lambda path: mock_db)
+    monkeypatch.setattr(cli, "TelegramClient", lambda token, chat_id: mock_tg)
+
+    rc = cli.cmd_publish(argparse.Namespace(issue_id=1, yes=True))
+    assert rc == 1
+    mock_tg.send.assert_not_called()
+    assert "failed Telegram guards" in capsys.readouterr().err
+
 

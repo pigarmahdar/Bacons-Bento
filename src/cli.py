@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 from datetime import datetime
 import logging
 from pathlib import Path
@@ -21,7 +22,15 @@ from .drafts import (
     update_draft_note_frontmatter,
     write_draft_note,
 )
-from .formatter import format_terminal_box, html_to_terminal, markdown_to_telegram_html
+from .formatter import (
+    TG_CAPTION_LIMIT,
+    TG_LIMIT,
+    format_met_caption,
+    format_terminal_box,
+    html_to_terminal,
+    markdown_to_telegram_html,
+    validate_telegram_html,
+)
 from .llm import OpenRouterClient
 from .met import MetArtwork, fetch_met_artwork
 from .pantry import collect_candidates, fetch_page_metadata, save_clipping_note
@@ -203,13 +212,8 @@ def cmd_new(args: argparse.Namespace) -> int:
         try:
             tg.send(package.review_summary_html, chat_id=settings.admin_chat_id)
             if package.met_artwork:
-                met = package.met_artwork
-                caption = (
-                    f"🌳 <b>{met.title}</b> ({met.date or 'n.d.'})\n"
-                    f"<i>{met.artist or 'Unknown Artist'}</i> · {met.medium}\n"
-                    f"{met.department}, <a href=\"{met.object_url}\">The Met Collection (CC0)</a>"
-                )
-                tg.send_photo(met.image_url, caption=caption, chat_id=settings.admin_chat_id)
+                caption = format_met_caption(package.met_artwork)
+                tg.send_photo(package.met_artwork.image_url, caption=caption, chat_id=settings.admin_chat_id)
             print(f"\033[32m✔ Dispatched draft review to private admin chat ({settings.admin_chat_id})\033[0m")
         except TelegramError as exc:
             print(f"\033[33mWarning: Failed to send review preview to Telegram: {exc}\033[0m", file=sys.stderr)
@@ -219,14 +223,21 @@ def cmd_new(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_preview(args: argparse.Namespace) -> int:
-    """Preview a pending or specified draft in the terminal."""
-    settings = load_settings(require_telegram=False)
-    db = Database(settings.db_path)
-    issue_id = getattr(args, "issue_id", None)
-    draft = db.get_draft(issue_id)
+@dataclass
+class ResolvedDraft:
+    draft: Optional[dict]
+    draft_file: Optional[Path]
+    issue_number: Any
+    status: str
+    created_at: str
+    issue_html: str
+    met_data: Optional[dict]
+    selected_entries: list
 
-    # Check for an associated Obsidian draft note
+
+def resolve_draft(db: Database, settings: Any, issue_id: Optional[int] = None) -> Optional[ResolvedDraft]:
+    """Find and sync draft from SQLite and Obsidian vault."""
+    draft = db.get_draft(issue_id)
     issues_dir = Path(settings.bento_issues_path).expanduser() if getattr(settings, "bento_issues_path", "") else None
     draft_file: Optional[Path] = None
 
@@ -240,18 +251,15 @@ def cmd_preview(args: argparse.Namespace) -> int:
         draft_file = find_draft_note(issues_dir, issue_id)
 
     if not draft and not draft_file:
-        target = f" for ID {issue_id}" if issue_id else ""
-        print(f"\033[33mNo pending draft found{target}. Run 'bento new' to draft an issue.\033[0m")
-        db.close()
-        return 1
+        return None
 
-    issue_number = (draft.get("issue_number") if draft else None) or "?"
+    issue_number = (draft.get("issue_number") if draft else None) or 1
     status = (draft.get("status") if draft else None) or "pending"
     created_at = (draft.get("created_at") if draft else None) or "recent"
     issue_html = draft.get("issue_html", "") if draft else ""
-    met_artwork = draft.get("met_artwork") if draft else None
+    met_data = draft.get("met_artwork") if draft else None
+    selected_entries = draft.get("selected_entries", []) if draft else []
 
-    # If draft note exists in Obsidian, synchronize edits
     if draft_file and draft_file.exists():
         try:
             meta, body = parse_draft_note(draft_file.read_text(encoding="utf-8"))
@@ -259,20 +267,84 @@ def cmd_preview(args: argparse.Namespace) -> int:
                 issue_number = meta.get("issue_number", issue_number)
                 status = meta.get("status", status)
                 if meta.get("met_artwork"):
-                    met_artwork = meta.get("met_artwork")
+                    met_data = meta.get("met_artwork")
+                if not selected_entries and meta.get("selected_entries"):
+                    selected_entries = meta.get("selected_entries")
             if body:
                 issue_html = markdown_to_telegram_html(body)
         except Exception as exc:
             log.warning("Could not read draft file %s: %s", draft_file, exc)
 
-    file_tag = f" [Obsidian: {draft_file.name}]" if draft_file else ""
-    print(f"\n\033[1mDraft Issue #{issue_number}\033[0m [Status: {status}] (Created: {created_at}){file_tag}")
-    render_issue_terminal(issue_html, met_artwork)
+    return ResolvedDraft(
+        draft=draft,
+        draft_file=draft_file,
+        issue_number=issue_number,
+        status=status,
+        created_at=created_at,
+        issue_html=issue_html,
+        met_data=met_data,
+        selected_entries=selected_entries,
+    )
 
-    if status == "pending":
-        issue_ref = f" --issue-id {draft['issue_id']}" if draft and "issue_id" in draft else ""
+
+def cmd_preview(args: argparse.Namespace) -> int:
+    """Preview a pending or specified draft in the terminal."""
+    settings = load_settings(require_telegram=False)
+    db = Database(settings.db_path)
+    issue_id = getattr(args, "issue_id", None)
+    d = resolve_draft(db, settings, issue_id)
+
+    if not d:
+        target = f" for ID {issue_id}" if issue_id else ""
+        print(f"\033[33mNo pending draft found{target}. Run 'bento new' to draft an issue.\033[0m")
+        db.close()
+        return 1
+
+    file_tag = f" [Obsidian: {d.draft_file.name}]" if d.draft_file else ""
+    print(f"\n\033[1mDraft Issue #{d.issue_number}\033[0m [Status: {d.status}] (Created: {d.created_at}){file_tag}")
+    render_issue_terminal(d.issue_html, d.met_data)
+
+    if d.status == "pending":
+        issue_ref = f" --issue-id {d.draft['issue_id']}" if d.draft and "issue_id" in d.draft else ""
         print(f"\nReady to publish? Run: \033[1m./bento publish{issue_ref}\033[0m\n")
 
+    db.close()
+    return 0
+
+
+def cmd_lint(args: argparse.Namespace) -> int:
+    """Validate Markdown/HTML tag nesting and character limits before broadcasting."""
+    settings = load_settings(require_telegram=False)
+    db = Database(settings.db_path)
+    issue_id = getattr(args, "issue_id", None)
+    d = resolve_draft(db, settings, issue_id)
+
+    if not d:
+        target = f" for ID {issue_id}" if issue_id else ""
+        print(f"\033[31mError: No draft found{target} to lint.\033[0m", file=sys.stderr)
+        db.close()
+        return 1
+
+    if d.draft_file:
+        print(f"Linting draft from Obsidian: \033[1m{d.draft_file.name}\033[0m")
+
+    caption = format_met_caption(d.met_data) if d.met_data else ""
+    errors = validate_telegram_html(d.issue_html, TG_LIMIT)
+    if caption:
+        caption_errors = validate_telegram_html(caption, TG_CAPTION_LIMIT)
+        errors.extend(f"[Artwork Caption] {err}" for err in caption_errors)
+
+    if errors:
+        print(f"\n\033[31m❌ Issue #{d.issue_number} failed Telegram lint guards ({len(errors)} error(s)):\033[0m")
+        for err in errors:
+            print(f"  • {err}")
+        db.close()
+        return 1
+
+    print(f"\033[32m✔ Issue #{d.issue_number} passed Telegram format & character guards.\033[0m")
+    print(f"  • Issue text: {len(d.issue_html)}/{TG_LIMIT} chars")
+    if caption:
+        print(f"  • Met caption: {len(caption)}/{TG_CAPTION_LIMIT} chars")
     db.close()
     return 0
 
@@ -284,106 +356,86 @@ def cmd_publish(args: argparse.Namespace) -> int:
     issue_id = getattr(args, "issue_id", None)
     skip_confirm = getattr(args, "yes", False)
 
-    draft = db.get_draft(issue_id)
-    issues_dir = Path(settings.bento_issues_path).expanduser() if getattr(settings, "bento_issues_path", "") else None
-    draft_file: Optional[Path] = None
+    d = resolve_draft(db, settings, issue_id)
 
-    if draft:
-        file_path_str = draft.get("file_path")
-        if file_path_str and Path(file_path_str).exists():
-            draft_file = Path(file_path_str)
-        elif issues_dir and issues_dir.exists():
-            draft_file = find_draft_note(issues_dir, draft.get("issue_number"))
-    elif issues_dir and issues_dir.exists():
-        draft_file = find_draft_note(issues_dir, issue_id)
-
-    if not draft and not draft_file:
+    if not d:
         target = f" for ID {issue_id}" if issue_id else ""
         print(f"\033[31mError: No pending draft found{target}.\033[0m", file=sys.stderr)
         db.close()
         return 1
 
-    issue_number = (draft.get("issue_number") if draft else None) or 1
-    issue_html = draft.get("issue_html", "") if draft else ""
-    met_data = draft.get("met_artwork") if draft else None
-    selected_entries = draft.get("selected_entries", []) if draft else []
+    if d.draft_file:
+        print(f"Loaded edited draft from Obsidian: \033[1m{d.draft_file.name}\033[0m")
 
-    # If draft note exists in Obsidian, synchronize edits
-    if draft_file and draft_file.exists():
-        try:
-            meta, body = parse_draft_note(draft_file.read_text(encoding="utf-8"))
-            if meta:
-                issue_number = meta.get("issue_number", issue_number)
-                if meta.get("met_artwork"):
-                    met_data = meta.get("met_artwork")
-                if not selected_entries and meta.get("selected_entries"):
-                    selected_entries = meta.get("selected_entries")
-            if body:
-                issue_html = markdown_to_telegram_html(body)
-            print(f"Loaded edited draft from Obsidian: \033[1m{draft_file.name}\033[0m")
-        except Exception as exc:
-            log.warning("Could not read draft file %s: %s", draft_file, exc)
-
-    if not issue_html:
+    if not d.issue_html:
         print("\033[31mError: Draft payload is missing 'issue_html'.\033[0m", file=sys.stderr)
         db.close()
         return 1
 
+    # Pre-flight format & character guard
+    caption = format_met_caption(d.met_data) if d.met_data else ""
+    errors = validate_telegram_html(d.issue_html, TG_LIMIT)
+    if caption:
+        caption_errors = validate_telegram_html(caption, TG_CAPTION_LIMIT)
+        errors.extend(f"[Artwork Caption] {err}" for err in caption_errors)
+
+    if errors:
+        print(f"\033[31mError: Cannot publish Issue #{d.issue_number} — failed Telegram guards:\033[0m", file=sys.stderr)
+        for err in errors:
+            print(f"  • {err}", file=sys.stderr)
+        db.close()
+        return 1
+
     if not skip_confirm:
-        confirm = input(f"Publish Issue #{issue_number} to {settings.chat_id}? [y/N]: ").strip().lower()
+        confirm = input(f"Publish Issue #{d.issue_number} to {settings.chat_id}? [y/N]: ").strip().lower()
         if confirm not in ("y", "yes"):
             print("Publication cancelled.")
             db.close()
             return 0
 
     tg = TelegramClient(settings.bot_token, settings.chat_id)
-    print(f"Publishing Issue #{issue_number} to {settings.chat_id}...")
+    print(f"Publishing Issue #{d.issue_number} to {settings.chat_id}...")
 
     # 1. Send the unified issue text
     try:
-        tg.send(issue_html, chat_id=settings.chat_id)
+        tg.send(d.issue_html, chat_id=settings.chat_id)
     except TelegramError as exc:
         print(f"\033[31mFailed to publish issue text to Telegram: {exc}\033[0m", file=sys.stderr)
         db.close()
         return 1
 
     # 2. Send the Met artwork photo if present
-    if met_data and met_data.get("image_url"):
-        caption = (
-            f"🌳 <b>{met_data.get('title')}</b> ({met_data.get('date') or 'n.d.'})\n"
-            f"<i>{met_data.get('artist') or 'Unknown Artist'}</i> · {met_data.get('medium') or ''}\n"
-            f"{met_data.get('department')}, <a href=\"{met_data.get('object_url')}\">The Met Collection (CC0)</a>"
-        )
+    if d.met_data and d.met_data.get("image_url"):
         try:
-            tg.send_photo(met_data["image_url"], caption=caption, chat_id=settings.chat_id)
-            if met_data.get("object_id"):
-                db.mark_met_seen(met_data["object_id"], met_data.get("title", ""))
+            tg.send_photo(d.met_data["image_url"], caption=caption, chat_id=settings.chat_id)
+            if d.met_data.get("object_id"):
+                db.mark_met_seen(d.met_data["object_id"], d.met_data.get("title", ""))
         except TelegramError as exc:
             print(f"\033[33mWarning: Issue posted, but failed to post Met artwork: {exc}\033[0m", file=sys.stderr)
 
     # 3. Mark selected entries as seen/posted in database
-    for e in selected_entries:
+    for e in d.selected_entries:
         db.mark_seen(e["id"], e.get("feed_url", ""), e.get("title", ""), e.get("link", ""), posted=True)
 
     # 4. Mark draft as approved
-    if draft and "issue_id" in draft:
-        db.approve_draft(draft["issue_id"])
+    if d.draft and "issue_id" in d.draft:
+        db.approve_draft(d.draft["issue_id"])
 
     # 5. Update Obsidian note frontmatter to status: published
-    if draft_file and draft_file.exists():
+    if d.draft_file and d.draft_file.exists():
         try:
             update_draft_note_frontmatter(
-                draft_file,
+                d.draft_file,
                 {
                     "status": "published",
                     "published_at": datetime.now().isoformat(timespec="seconds"),
                 },
             )
-            print(f"\033[32m✔ Updated Obsidian note status to 'published' ({draft_file.name})\033[0m")
+            print(f"\033[32m✔ Updated Obsidian note status to 'published' ({d.draft_file.name})\033[0m")
         except Exception as exc:
             log.warning("Could not update Obsidian note status: %s", exc)
 
-    print(f"\n\033[32m✔ Issue #{issue_number} successfully approved and broadcast to {settings.chat_id}!\033[0m")
+    print(f"\n\033[32m✔ Issue #{d.issue_number} successfully approved and broadcast to {settings.chat_id}!\033[0m")
 
     # Notify admin chat
     if settings.admin_chat_id:
@@ -567,13 +619,8 @@ def cmd_update(args: argparse.Namespace) -> int:
         try:
             tg.send(package.review_summary_html, chat_id=settings.admin_chat_id)
             if package.met_artwork:
-                met = package.met_artwork
-                caption = (
-                    f"🌳 <b>{met.title}</b> ({met.date or 'n.d.'})\n"
-                    f"<i>{met.artist or 'Unknown Artist'}</i> · {met.medium}\n"
-                    f"{met.department}, <a href=\"{met.object_url}\">The Met Collection (CC0)</a>"
-                )
-                tg.send_photo(met.image_url, caption=caption, chat_id=settings.admin_chat_id)
+                caption = format_met_caption(package.met_artwork)
+                tg.send_photo(package.met_artwork.image_url, caption=caption, chat_id=settings.admin_chat_id)
             print(f"\033[32m✔ Dispatched updated review to admin chat ({settings.admin_chat_id})\033[0m")
         except TelegramError as exc:
             print(f"\033[33mWarning: Failed to send Telegram review: {exc}\033[0m", file=sys.stderr)
@@ -589,44 +636,58 @@ def cmd_update(args: argparse.Namespace) -> int:
 
 
 def cmd_status(args: argparse.Namespace) -> int:
-    """Display hopper metrics and current draft state."""
+    """Display hopper metrics, per-course candidate depth, and health warnings."""
     settings = load_settings(require_telegram=False)
     db = Database(settings.db_path)
     feeds = load_feeds()
     stats = db.get_hopper_stats()
 
+    # Collect unseen candidates across feeds and pantry without mutating state
+    candidates, breakdown = collect_candidates(feeds, settings, db, dry_run=True)
+
     content = []
     content.append(f"• Active Feeds in Registry : \033[1m{len(feeds)}\033[0m")
+    content.append(
+        f"• Chef's Pantry            : {breakdown['obsidian']} active clipping(s) · {breakdown['telegram']} Telegram drop(s)"
+    )
+    content.append(
+        f"• Total Unseen in Hopper   : \033[1m{breakdown['total']}\033[0m candidates "
+        f"({breakdown['rss']} RSS, {breakdown['obsidian']} Obsidian, {breakdown['telegram']} Telegram)"
+    )
+    content.append("")
 
-    # Chef's Pantry status
-    from pathlib import Path
-    from .pantry import ingest_obsidian_clippings, ingest_telegram_pantry
-    obs_path = Path(settings.obsidian_clippings_path).expanduser() if getattr(settings, "obsidian_clippings_path", "") else None
-    max_days = getattr(settings, "pantry_max_age_days", 30)
-    if obs_path and obs_path.is_dir():
-        obs_total = len([f for f in obs_path.glob("*.md") if not f.name.startswith(("_", "."))])
-        obs_active = len(ingest_obsidian_clippings(obs_path, is_seen=db.is_seen, max_age_days=max_days))
-        content.append(f"• Chef's Pantry (Obsidian) : \033[1m{obs_active}\033[0m active candidates (last {max_days}d) · {obs_total} in vault")
-    else:
-        content.append(f"• Chef's Pantry (Obsidian) : \033[2mNot configured\033[0m")
+    # Course hopper depth & health warnings
+    by_course: dict[str, list] = {"anchor": [], "lens": [], "craft": [], "garnish": []}
+    for e in candidates:
+        c = e.course.lower()
+        if c in by_course:
+            by_course[c].append(e)
+        else:
+            by_course.setdefault(c, []).append(e)
 
-    bot_token = getattr(settings, "bot_token", "")
-    admin_chat_id = getattr(settings, "admin_chat_id", "")
-    if bot_token and admin_chat_id:
-        try:
-            last_offset_str = db.get_kv("telegram_pantry_offset")
-            last_offset = int(last_offset_str) if last_offset_str else None
-            tg_entries, _ = ingest_telegram_pantry(
-                bot_token=bot_token,
-                admin_chat_id=admin_chat_id,
-                is_seen=db.is_seen,
-                offset=last_offset,
-                acknowledge=False,
-                max_age_days=max_days,
-            )
-            content.append(f"• Chef's Pantry (Telegram) : \033[1m{len(tg_entries)}\033[0m pending drop(s) in @MellowBreak_bot queue")
-        except Exception:
-            pass
+    content.append("• Course Hopper Depth:")
+    course_keys = list(by_course.keys())
+    for i, c in enumerate(course_keys):
+        prefix = "└─" if i == len(course_keys) - 1 else "├─"
+        n = len(by_course[c])
+        if n == 0:
+            health = "\033[31m❌ STARVING\033[0m (0 candidates)"
+        elif n == 1:
+            health = "\033[33m⚠️ LOW\033[0m (1 candidate)"
+        else:
+            health = f"\033[32m✔ Healthy\033[0m ({n} candidates)"
+        content.append(f"  {prefix} {c.title():<8} : {n} candidates  [{health}]")
+
+    # Starving feeds (registered feeds that yielded 0 unseen items)
+    candidate_feed_urls = {e.feed_url for e in candidates if e.feed_url}
+    starving_feeds = [f for f in feeds if f.url not in candidate_feed_urls]
+    if starving_feeds:
+        content.append("")
+        content.append(f"• \033[33mStarving Feeds ({len(starving_feeds)} with 0 unseen items)\033[0m:")
+        for sf in starving_feeds:
+            content.append(f"  • {sf.name} ({sf.course.title()})")
+
+    content.append("")
     content.append(f"• Total Articles Ingested  : {stats['seen_total']}")
     content.append(f"• Articles Published       : {stats['posted_total']}")
     content.append(f"• Met Artworks Displayed   : {stats['met_seen_total']}")
@@ -686,6 +747,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_prev = subparsers.add_parser("preview", aliases=["show"], help="Preview a pending draft in terminal")
     p_prev.add_argument("--issue-id", type=int, default=None, help="Specific draft issue ID (defaults to latest pending)")
     p_prev.set_defaults(func=cmd_preview)
+
+    # bento lint
+    p_lint = subparsers.add_parser("lint", aliases=["check"], help="Validate Telegram tag nesting and character limits")
+    p_lint.add_argument("--issue-id", type=int, default=None, help="Specific draft issue ID (defaults to latest pending)")
+    p_lint.set_defaults(func=cmd_lint)
 
     # bento publish
     p_pub = subparsers.add_parser("publish", aliases=["approve"], help="Approve and broadcast draft to @baconbento")
