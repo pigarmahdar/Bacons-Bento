@@ -250,7 +250,7 @@ TELEGRAM_ADMIN_CHAT_ID=your_personal_telegram_numeric_id
 
 # OpenRouter AI Configuration
 OPENROUTER_API_KEY=sk-or-v1-xxxxxxxxxxxxxxxxxxxx
-OPENROUTER_DECISION_MODEL=typesafe/jev-1.13
+OPENROUTER_DECISION_MODEL=~typesafe/jev-latest
 OPENROUTER_DRAFTING_MODEL=xiaomi/mimo-v2.6-flash
 
 # Persistence

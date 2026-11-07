@@ -324,3 +324,43 @@ def test_cmd_update_success(monkeypatch, capsys, tmp_path):
     note_content = draft_file.read_text(encoding="utf-8")
     assert "New Craft Masterpiece" in note_content
 
+
+def test_cmd_update_auto_assigns_next_open_course(monkeypatch):
+    mock_db = MagicMock()
+    state = {
+        "issue_id": 1,
+        "issue_number": 1,
+        "status": "pending",
+        "selected_entries": [],
+        "met_artwork": None,
+    }
+    mock_db.get_draft.side_effect = lambda issue_id=None: state
+
+    monkeypatch.setattr(
+        cli,
+        "load_settings",
+        lambda **kw: MagicMock(
+            db_path=":memory:",
+            bot_token="",
+            chat_id="@baconbento",
+            admin_chat_id="",
+            bento_issues_path="",
+            obsidian_clippings_path="",
+            openrouter_api_key="test_key",
+            openrouter_drafting_model="test_model",
+        ),
+    )
+    monkeypatch.setattr(cli, "Database", lambda path: mock_db)
+    monkeypatch.setattr(cli, "fetch_page_metadata", lambda url: (f"Title for {url}", "Summary"))
+    mock_pkg = MagicMock(issue_html="<b>HTML</b>", review_summary_html="Review", met_artwork=None)
+    monkeypatch.setattr(cli, "draft_issue_package", lambda **kw: mock_pkg)
+
+    # 1st update without --course goes to 'lens'
+    cli.cmd_update(argparse.Namespace(url="https://example.com/first", link=None, course=None, issue_id=1, no_notify=True))
+    assert [e["course"] for e in state["selected_entries"]] == ["lens"]
+
+    # 2nd update without --course goes to next open course ('anchor') instead of overwriting 'lens'
+    cli.cmd_update(argparse.Namespace(url="https://example.com/second", link=None, course=None, issue_id=1, no_notify=True))
+    assert [e["course"] for e in state["selected_entries"]] == ["anchor", "lens"]
+    assert {e["link"] for e in state["selected_entries"]} == {"https://example.com/first", "https://example.com/second"}
+

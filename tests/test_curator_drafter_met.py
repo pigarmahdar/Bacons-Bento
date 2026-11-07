@@ -148,19 +148,41 @@ def test_curate_candidates_with_jev():
     candidates = [
         Entry(id="e1", feed_url="", source_tag="Aeon", title="Essay 1", link="http://1", summary="Sum 1", published=100.0, source_name="Aeon", course="anchor"),
         Entry(id="e2", feed_url="", source_tag="Coda", title="Essay 2", link="http://2", summary="Sum 2", published=100.0, source_name="Coda Story", course="lens"),
+        Entry(id="p1", feed_url="", source_tag="Telegram", title="Pantry Lens", link="http://3", summary="Sum 3", published=100.0, source_name="Chef's Pantry", course="lens"),
     ]
 
     mock_client = MagicMock()
     mock_client.decide.return_value = {
         "anchor": {"type": "choice", "choice": "e1", "confidence": 0.95},
-        "lens": {"type": "choice", "choice": "none_worthy", "confidence": 0.88},
+        "lens": {"type": "choice", "choice": "p1", "confidence": 0.88},
     }
 
     result = curate_candidates(candidates, mock_client, model="typesafe/jev-1.13")
+    questions_sent = mock_client.decide.call_args.kwargs["questions"]
+    assert "none_worthy" not in questions_sent["anchor"]["criteria"]
+    assert "none_worthy" not in questions_sent["lens"]["criteria"]
+    assert list(questions_sent["lens"]["criteria"].keys())[0] == "p1"  # Chef's Pantry prioritized first
+    assert len(result.selected_entries) == 2
+    assert result.decisions["anchor"].entry.id == "e1"
+    assert result.decisions["lens"].entry.id == "p1"
+    assert "95.0%" in result.decisions["anchor"].rationale
+
+
+def test_curate_candidates_jev_failure_falls_back_to_completions():
+    candidates = [
+        Entry(id="e1", feed_url="", source_tag="Aeon", title="Essay 1", link="http://1", summary="Sum 1", published=100.0, source_name="Aeon", course="anchor"),
+    ]
+
+    mock_client = MagicMock()
+    mock_client.decide.side_effect = Exception("OpenRouter Decisions HTTP 404: guardrail blocked")
+    mock_client.complete.return_value = '{"selections": {"anchor": {"selected_id": "e1", "rationale": "High quality"}}}'
+
+    result = curate_candidates(candidates, mock_client, model="typesafe/jev-1.13", fallback_model="test/fallback-model")
     assert len(result.selected_entries) == 1
     assert result.decisions["anchor"].entry.id == "e1"
-    assert result.decisions["lens"].entry is None
-    assert "95.0%" in result.decisions["anchor"].rationale
+    mock_client.complete.assert_called_once()
+    assert mock_client.complete.call_args.kwargs["model"] == "test/fallback-model"
+
 
 
 def test_draft_issue_package():

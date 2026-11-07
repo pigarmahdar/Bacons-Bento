@@ -30,7 +30,7 @@ class OpenRouterClient:
         self,
         state: str,
         questions: Dict[str, Any],
-        model: str = "typesafe/jev-1.13",
+        model: str = "~typesafe/jev-latest",
         max_attempts: int = 3,
     ) -> Dict[str, Any]:
         """Call OpenRouter Decisions API (e.g. typesafe/jev-1.13)."""

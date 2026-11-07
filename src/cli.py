@@ -91,7 +91,12 @@ def cmd_new(args: argparse.Namespace) -> int:
     )
 
     print(f"  → Evaluating candidates with Decision Model ({settings.openrouter_decision_model})...")
-    curation = curate_candidates(candidates, llm_client, model=settings.openrouter_decision_model)
+    curation = curate_candidates(
+        candidates,
+        llm_client,
+        model=settings.openrouter_decision_model,
+        fallback_model=settings.openrouter_drafting_model,
+    )
 
     # 4. Next issue number
     cur = db.conn.execute("SELECT COUNT(*) FROM drafts WHERE status = 'approved'")
@@ -442,11 +447,16 @@ def cmd_update(args: argparse.Namespace) -> int:
     final_title = title or domain
     final_summary = summary or f"Featured read from {domain}."
 
-    course = (course_arg or "lens").lower()
-    if course not in ("anchor", "lens", "craft", "garnish"):
-        print(f"\033[31mError: Invalid course '{course}'. Must be one of: anchor, lens, craft, garnish\033[0m", file=sys.stderr)
-        db.close()
-        return 1
+    existing_entries = draft.get("selected_entries", [])
+    if course_arg:
+        course = course_arg.lower()
+        if course not in ("anchor", "lens", "craft", "garnish"):
+            print(f"\033[31mError: Invalid course '{course}'. Must be one of: anchor, lens, craft, garnish\033[0m", file=sys.stderr)
+            db.close()
+            return 1
+    else:
+        occupied = {e.get("course") for e in existing_entries}
+        course = next((c for c in ("lens", "anchor", "craft", "garnish") if c not in occupied), "lens")
 
     eid = entry_id(None, target_url)
     new_entry = {
@@ -471,7 +481,6 @@ def cmd_update(args: argparse.Namespace) -> int:
         )
 
     # 3. Update draft's selected_entries: replace entry for that course
-    existing_entries = draft.get("selected_entries", [])
     updated_entries = [e for e in existing_entries if e.get("course") != course]
     updated_entries.append(new_entry)
 
